@@ -1,4 +1,4 @@
-# nang cap phuong thuc xu_ly_tra_loi de de mo rong
+# nâng cấp phương thức xu_ly_tra_loi để dễ mở rộng 
 from translate import Translator
 from lunarcalendar import Converter, Solar
 import datetime
