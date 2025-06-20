@@ -1,7 +1,6 @@
-# a43 them auto run()
 import os
 import importlib.util
-import time
+import time  # Thêm import này
 from abc import ABC, abstractmethod
 from typing import List, Callable, Any, Optional, Union
 
@@ -60,16 +59,20 @@ class BaseVersionManager(IVersionManager):
                 "function": method_ref,
                 "description": description
             }
+
         elif mode == "append":
             old_func = methods[method_name]["function"]
+
             def combined_func(*args, **kwargs):
                 old_result = old_func(*args, **kwargs)
                 new_result = method_ref(*args, **kwargs)
                 return (old_result, new_result)
+
             methods[method_name] = {
                 "function": combined_func,
                 "description": methods[method_name]["description"] + " + " + description
             }
+
         elif mode == "multi":
             current_func = methods.get(method_name, {}).get("function")
             if not isinstance(current_func, list):
@@ -79,6 +82,7 @@ class BaseVersionManager(IVersionManager):
                 "function": current_func,
                 "description": description
             }
+
         else:
             raise ValueError(f"Chế độ mode không hợp lệ: {mode}")
 
@@ -123,14 +127,39 @@ class BaseVersionManager(IVersionManager):
             return True
         return False
 
-# ==================== VIRTUAL ASSISTANT CORE ====================
+# ==================== CORE ASSISTANT ====================
 
 class VirtualAssistantCore:
     def __init__(self):
         self.version_manager = BaseVersionManager()
         self.handlers: List[ICommandHandler] = []
         self.context: dict = {}
+
         self.load_plugins("plugins")
+
+    @property
+    def shared_registry(self):
+        return self.context.get("shared_registry")
+
+    @property
+    def hooks(self):
+        return self.context.get("hook_manager")
+
+    def register_before_hook(self, hook_name: str, handler):
+        if self.hooks:
+            self.hooks.register_before_hook(hook_name, handler)
+
+    def register_after_hook(self, hook_name: str, handler):
+        if self.hooks:
+            self.hooks.register_after_hook(hook_name, handler)
+
+    def call_before_hooks(self, hook_name: str, *args, **kwargs):
+        if self.hooks:
+            self.hooks.call_before_hooks(hook_name, *args, **kwargs)
+
+    def call_after_hooks(self, hook_name: str, result=None, *args, **kwargs):
+        if self.hooks:
+            self.hooks.call_after_hooks(hook_name, result=result, *args, **kwargs)
 
     def load_plugins(self, folder):
         if not os.path.exists(folder):
@@ -181,6 +210,33 @@ class VirtualAssistantCore:
                 return handler.handle(user_input)
         print("🤷‍♂️ Tôi chưa hiểu yêu cầu của bạn.")
         return True
+
+    def call_method(self, class_name: str, method_name: str, *args, version: Union[str, List[str]] = None, **kwargs):
+        func = self.version_manager.get_method_version(class_name, method_name, version)
+        if func:
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                print(f"⚠️ Lỗi khi gọi {class_name}.{method_name}: {e}")
+                return None
+        print(f"⚠️ Không tìm thấy {class_name}.{method_name} ({version or self.version_manager.current_version})")
+        return None
+
+    def call_class_method(self, class_name: str, method_name: str, *args, version: str = None, **kwargs):
+        cls = self.version_manager.get_class_version(class_name, version)
+        if cls:
+            try:
+                instance = cls()
+                method = getattr(instance, method_name)
+                if callable(method):
+                    return method(*args, **kwargs)
+                else:
+                    print(f"⚠️ {class_name}.{method_name} không phải là method.")
+            except Exception as e:
+                print(f"⚠️ Lỗi khi gọi {class_name}.{method_name}: {e}")
+        else:
+            print(f"⚠️ Không tìm thấy class {class_name} ({version or self.version_manager.current_version})")
+        return None
 
     def run(self, mode: str = "manual", auto_file: str = None, auto_list: list = None, auto_generator: Any = None, delay: float = 0.0):
         def process_and_wait(command):
@@ -243,8 +299,7 @@ class VirtualAssistantCore:
             except Exception as e:
                 print(f"⚠️ Lỗi: {e}")
 
-# ==================== MAIN ====================
-
+# ==================== CHẠY ====================
 if __name__ == "__main__":
     assistant = VirtualAssistantCore()
     assistant.run()
