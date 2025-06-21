@@ -5,6 +5,7 @@ Tạo thư mục su_kien.txt cùng cấp với asistanst này.
 Định dạng nội dung file tri_thuc.txt: a||b 
 Các lệnh:
 [ đổi ga ] "bao lâu rồi"
+"xem sự kiện"
 {sự kiện:} hôm nay abc xyz
 
 # asistanst42:
