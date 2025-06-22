@@ -1,5 +1,8 @@
 # file Excel du_lieu.xlsx
-
+# lệnh huấn luyện
+#_: ai_train_excel du_lieu.xlsx age spend income churn
+# lệnh sử dụng kết quả dự báo 
+# : ai_predict [[ 74, 45, 78 ]]
 import pandas as pd
 import ast
 import os
