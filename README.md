@@ -4,7 +4,7 @@ Tạo thư mục tri_thuc.txt cùng cấp với asistanst này.
 Tạo thư mục su_kien.txt cùng cấp với asistanst này.
 Định dạng nội dung file tri_thuc.txt: a||b 
 - có search
-- có crud ( dạy: , xóa: , xem tri thức )
+- có crud ( dạy: , xóa: , xem tri thức, xem sự kiện )
 - có gợi ý câu trả lời liên quan và chọn số xong hiển thị câu trả lời tương ứng
 - có trả lời hôm nay là thứ mấy
 - 
