@@ -30,4 +30,5 @@ có thêm run() auto
 π plugin:
 - có thêm plugin huấn luyện AI lấy dữ liệu từ file excel
 - có thêm plugin dự đoán từ
+word_predict {} 
 - xuất file txt ra excel 
