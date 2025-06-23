@@ -20,8 +20,9 @@ chỉ có 1 chế độ run() nhập input thủ công từ người dùng
 
 # asistanst43 : ( 20/6/2025)
 có thêm run() auto
-có thêm plugin huấn luyện AI lấy dữ liệu từ file excel 
 
 @ các lệnh:
 
 π plugin:
+- có thêm plugin huấn luyện AI lấy dữ liệu từ file excel
+- có thêm plugin dự đoán từ 
