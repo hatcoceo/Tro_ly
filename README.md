@@ -3,7 +3,11 @@ Bản ổn định xài tốt.
 Tạo thư mục tri_thuc.txt cùng cấp với asistanst này.
 Tạo thư mục su_kien.txt cùng cấp với asistanst này.
 Định dạng nội dung file tri_thuc.txt: a||b 
-
+- có search
+- có crud
+- có gợi ý câu trả lời liên quan và chọn số xong hiển thị câu trả lời tương ứng
+- có trả lời hôm nay là thứ mấy
+- 
 @ Các lệnh:
 [ đổi ga ] "bao lâu rồi"
 "xem sự kiện"
