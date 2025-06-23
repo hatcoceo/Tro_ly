@@ -24,7 +24,7 @@ chỉ có 1 chế độ run() nhập input thủ công từ người dùng
 
 # asistanst43 : ( 20/6/2025)
 có thêm run() auto
-
+- gợi ý trả lời ( bấm enter lúc đầu rồi hiển thị toàn bộ sau đó chọn số) 
 @ các lệnh:
 
 π plugin:
