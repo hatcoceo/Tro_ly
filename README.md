@@ -33,3 +33,7 @@ có thêm run() auto
 word_train {}
 word_predict {} 
 - xuất file txt ra excel 
+# asistanst60
+add class Loader 
+gõ thoát để chuyen sang asistanst 
+tự động tạo ra các folder ( plugins, version_managers, interfaces, asistansts)
