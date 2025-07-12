@@ -37,3 +37,6 @@ word_predict {}
 add class Loader 
 gõ thoát để chuyen sang asistanst 
 tự động tạo ra các folder ( plugins, version_managers, interfaces, asistansts)
+# asistanst70
+thêm folder virtualassistantcore tự động 
+tải tự động các phiên bản virtualassistantcore từ folder virtualassistantcore 
