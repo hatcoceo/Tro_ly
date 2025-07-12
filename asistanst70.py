@@ -15,9 +15,6 @@ class ICommandHandler(ABC):
         pass
 
 class IVersionManager(ABC):
-    @abstractmethod
-    def get_version(self) -> str:
-        raise NotImplementedError()
         
     @abstractmethod
     def register_method_version(self, class_name: str, method_name: str, version: str, method_ref: Callable, description: str = "", mode: str = "replace") -> bool:
@@ -51,9 +48,6 @@ class BaseVersionManager(IVersionManager):
             }
         }
         self.current_version = "default"
-
-    def get_version(self) -> str:
-        return self.current_version
 
     def register_method_version(self, class_name, method_name, version, method_ref, description="", mode="replace"):  
         if version not in self.versions:  
