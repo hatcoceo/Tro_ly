@@ -40,3 +40,5 @@ tự động tạo ra các folder ( plugins, version_managers, interfaces, asist
 # asistanst70
 thêm folder virtualassistantcore tự động 
 tải tự động các phiên bản virtualassistantcore từ folder virtualassistantcore 
+# asistanst 72
+có thể bật tắt virtualassistantcore, version_managers như plugin 
