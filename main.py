@@ -1,7 +1,8 @@
+
 import os
 import importlib.util
 from typing import Dict, Any, List, Callable, TypedDict, Optional
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template_string
 
 # ------------------------
 # Plugin Loader
@@ -65,9 +66,54 @@ app = Flask(__name__)
 assistant = VirtualAssistant()
 assistant.loader.load_plugins(assistant)
 
+# Giao diện HTML
+HTML_PAGE = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Asi-1 Chat</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 600px; margin: auto; }
+        .chat-box { border: 1px solid #ccc; padding: 10px; height: 400px; overflow-y: scroll; }
+        .user { color: blue; }
+        .bot { color: green; }
+        input { width: 80%; padding: 10px; }
+        button { padding: 10px; }
+    </style>
+</head>
+<body>
+    <h1>🤖 Asi-1 Trợ Lý Ảo</h1>
+    <div class="chat-box" id="chat"></div>
+    <input type="text" id="command" placeholder="Nhập lệnh..." onkeypress="if(event.key==='Enter'){sendCommand()}">
+    <button onclick="sendCommand()">Gửi</button>
+
+    <script>
+        async function sendCommand() {
+            const cmd = document.getElementById("command").value;
+            if (!cmd) return;
+            
+            const chat = document.getElementById("chat");
+            chat.innerHTML += "<div class='user'><b>Bạn:</b> " + cmd + "</div>";
+
+            const res = await fetch("/command", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ command: cmd })
+            });
+            const data = await res.json();
+            
+            chat.innerHTML += "<div class='bot'><b>Bot:</b> " + data.response + "</div>";
+            document.getElementById("command").value = "";
+            chat.scrollTop = chat.scrollHeight;
+        }
+    </script>
+</body>
+</html>
+"""
+
 @app.route("/", methods=["GET"])
 def home():
-    return render_template("index.html")  # Lấy từ templates/index.html
+    return render_template_string(HTML_PAGE)
 
 @app.route("/command", methods=["POST"])
 def command():
@@ -78,6 +124,7 @@ def command():
     cmd = data["command"]
     response = assistant.process_command(cmd)
     return jsonify({"response": response})
+
 
 
 if __name__ == "__main__":
