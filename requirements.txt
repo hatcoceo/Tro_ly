@@ -1,4 +1,4 @@
 flask>=3.0.0
 gunicorn>=23.0.0
 lunarcalendar>=0.0.9
-webbrowser
+
