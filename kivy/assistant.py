@@ -10,7 +10,7 @@ class PluginInfo(TypedDict, total=False):
     command_handle: Optional[List[str]]
 
 class PluginLoader:
-    def __init__(self, plugins_folder: str = "plugins3"):
+    def __init__(self, plugins_folder: str = "plugins"):
         self.plugins_folder = plugins_folder
         os.makedirs(plugins_folder, exist_ok=True)
 
