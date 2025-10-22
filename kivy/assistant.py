@@ -70,3 +70,5 @@ def start_cli():
         print("Asi-1:", response)
         if response == "👋 Tạm biệt!":
             break
+if __name__ == "__main__":
+    start_cli()
