@@ -1,3 +1,5 @@
+# sd: hiển thị thụt lề demo.py
+# sd2: phục hồi thụt lề demo_indent.py
 import os
 
 
@@ -29,7 +31,7 @@ class IndentVisualizerHandler:
                     original_line = line
                     line = line.replace('\t', ' ' * tab_size)
                     indent_count = len(line) - len(line.lstrip(' '))
-                    level = indent_count // tab_size + 1
+                    level = indent_count // tab_size + 0 # điều chỉnh mức độ đầu tiên 
                     remainder = indent_count % tab_size
                     indicator = '---|' * level + '.' * remainder
                     warn = ''
