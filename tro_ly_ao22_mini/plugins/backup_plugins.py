@@ -29,7 +29,7 @@ class BackupPluginHandler:
 
         # Bắt đầu theo dõi real-time
         threading.Thread(target=self.watch_loop, daemon=True).start()
-        print("🔍 Backup plugin: đang theo dõi plugin...")
+        #print("🔍 Backup plugin: đang theo dõi plugin...")
 
     # -----------------------------------------------------------
     def load_hash_db(self):
@@ -49,7 +49,7 @@ class BackupPluginHandler:
     # -----------------------------------------------------------
     def check_changes_on_start(self):
         """Kiểm tra thay đổi khi trợ lý vừa khởi động"""
-        print("🔍 Kiểm tra thay đổi plugin khi khởi động...")
+        #print("🔍 Kiểm tra thay đổi plugin khi khởi động...")
 
         for filename in os.listdir(self.plugins_folder):
             if not filename.endswith(".py") or filename.startswith("_"):
@@ -121,7 +121,7 @@ class BackupPluginHandler:
 
 
 def register(assistant):
-    print("🔧 Backup plugin REGISTERED!")
+    #print("🔧 Backup plugin REGISTERED!")
     assistant.handlers.append(BackupPluginHandler(assistant))
 
 
