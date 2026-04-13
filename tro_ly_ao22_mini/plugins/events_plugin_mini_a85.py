@@ -1,4 +1,3 @@
-# sd1 [ sự kiện:  hôm nay trời mưa ]
 import os
 import json
 from datetime import datetime

@@ -2,11 +2,12 @@ import os
 import ast
 import astor
 import sys
-
 import warnings
-warnings.filterwarnings("ignore", category=DeprecationWarning, module="astor")
+warnings.filterwarnings('ignore', category=DeprecationWarning, module='astor')
+
+
 def register(assistant):
-    assistant.handlers.append( PluginManager())
+    assistant.handlers.append(PluginManager())
 
 
 plugin_info = {'name': 'PluginManager', 'enabled': True, 'register':
@@ -19,12 +20,12 @@ class PluginManager:
     def __init__(self):
         self.plugin_folder = 'plugins'
 
-    def can_handle(self, command: str) -> bool:
+    def can_handle(self, command: str) ->bool:
         command = command.lower()
         return command.startswith('bật plugin') or command.startswith(
             'tắt plugin') or command == 'trạng thái plugin'
 
-    def handle(self, command: str) -> None:
+    def handle(self, command: str) ->None:
         command = command.lower().strip()
         if command == 'trạng thái plugin':
             self.show_status()
@@ -66,7 +67,7 @@ class PluginManager:
                 plugin_list.append(filename[:-3])
         return sorted(plugin_list)
 
-    def set_plugin_state(self, plugin_name: str, enabled: bool) -> bool:
+    def set_plugin_state(self, plugin_name: str, enabled: bool) ->bool:
         path = os.path.join(self.plugin_folder, f'{plugin_name}.py')
         if not os.path.exists(path):
             return False
@@ -81,12 +82,16 @@ class PluginManager:
                             if isinstance(node.value, ast.Dict):
                                 for i, key in enumerate(node.value.keys):
                                     if isinstance(key, ast.Constant
-                                        ) and isinstance(key.value, str) and key.value == 'enabled':
-                                        node.value.values[i] = ast.Constant(enabled)
+                                        ) and isinstance(key.value, str
+                                        ) and key.value == 'enabled':
+                                        node.value.values[i] = ast.Constant(enabled
+                                            )
                                         break
                                 else:
-                                    node.value.keys.append(ast.Constant('enabled'))
-                                    node.value.values.append(ast.Constant(enabled))
+                                    node.value.keys.append(ast.Constant(
+                                        'enabled'))
+                                    node.value.values.append(ast.Constant(
+                                        enabled))
             with open(path, 'w', encoding='utf-8') as f:
                 f.write(astor.to_source(tree))
             return True
@@ -129,8 +134,10 @@ class PluginManager:
                                 for k, v in zip(node.value.keys, node.value
                                     .values):
                                     if isinstance(k, ast.Constant
-                                        ) and isinstance(k.value, str) and k.value == 'enabled':
-                                        return isinstance(v, ast.Constant) and v.value
+                                        ) and isinstance(k.value, str
+                                        ) and k.value == 'enabled':
+                                        return isinstance(v, ast.Constant
+                                            ) and v.value
             return True
         except:
             return None

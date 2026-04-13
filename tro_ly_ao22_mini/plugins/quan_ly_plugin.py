@@ -1,17 +1,19 @@
 import os
 import sys
 
+
 class PluginManager:
 
     def __init__(self, assistant):
         self.assistant = assistant
         self.plugins_folder = 'plugins'
 
-    def can_handle(self, command: str) -> bool:
-        return command in ['quản lý plugin', 'tạo plugin', 'sửa plugin', 'xóa plugin'] \
-            or any(command.startswith(prefix) for prefix in ['tạo plugin', 'sửa plugin', 'xóa plugin'])
+    def can_handle(self, command: str) ->bool:
+        return command in ['quản lý plugin', 'tạo plugin', 'sửa plugin',
+            'xóa plugin'] or any(command.startswith(prefix) for prefix in [
+            'tạo plugin', 'sửa plugin', 'xóa plugin'])
 
-    def handle(self, command: str) -> None:
+    def handle(self, command: str) ->None:
         if command == 'quản lý plugin':
             self.menu()
         elif command.startswith('tạo plugin'):
@@ -23,16 +25,15 @@ class PluginManager:
 
     def restart_program(self):
         """Khởi động lại tiến trình Python"""
-        print("🔄 Đang khởi động lại để áp dụng thay đổi...")
+        print('🔄 Đang khởi động lại để áp dụng thay đổi...')
         python = sys.executable
         os.execv(python, [python] + sys.argv)
 
     def get_plugin_list(self):
         """Trả về danh sách plugin hợp lệ (bỏ qua file ẩn và file manager)"""
-        plugin_list = [
-            f[:-3] for f in os.listdir(self.plugins_folder)
-            if f.endswith('.py') and not f.startswith('_') and f != 'plugin_manager.py'
-        ]
+        plugin_list = [f[:-3] for f in os.listdir(self.plugins_folder) if f
+            .endswith('.py') and not f.startswith('_') and f !=
+            'plugin_manager.py']
         return sorted(plugin_list)
 
     def resolve_plugin_name(self, name_or_index):
@@ -43,7 +44,7 @@ class PluginManager:
             if 0 <= idx < len(plugin_list):
                 return plugin_list[idx]
             else:
-                print("⚠️ Số thứ tự plugin không hợp lệ.")
+                print('⚠️ Số thứ tự plugin không hợp lệ.')
                 return None
         return name_or_index
 
@@ -81,19 +82,20 @@ class PluginManager:
                 print(' (trống)')
                 return
             for idx, name in enumerate(plugin_list, start=1):
-                print(f"{idx}. {name}")
+                print(f'{idx}. {name}')
         except Exception as e:
             print(f'⚠️ Lỗi khi liệt kê plugin: {e}')
 
-    def create_plugin(self, command: str) -> None:
+    def create_plugin(self, command: str) ->None:
         try:
             name = command.replace('tạo plugin', '').strip()
             if not name:
                 print('⚠️ Bạn cần nhập tên hoặc số thứ tự plugin.')
                 return
-            # Không dùng số thứ tự khi tạo plugin, chỉ dùng tên
             if name.isdigit():
-                print("⚠️ Không thể tạo plugin bằng số thứ tự, vui lòng nhập tên.")
+                print(
+                    '⚠️ Không thể tạo plugin bằng số thứ tự, vui lòng nhập tên.'
+                    )
                 return
             filename = f'{self.plugins_folder}/{name}.py'
             if os.path.exists(filename):
@@ -108,7 +110,7 @@ class PluginManager:
         except Exception as e:
             print(f'⚠️ Lỗi khi tạo plugin: {e}')
 
-    def edit_plugin(self, command: str) -> None:
+    def edit_plugin(self, command: str) ->None:
         try:
             name_or_index = command.replace('sửa plugin', '').strip()
             if not name_or_index:
@@ -124,7 +126,9 @@ class PluginManager:
             print(f"\n Nội dung hiện tại của plugin '{name}':\n")
             with open(filename, 'r', encoding='utf-8', errors='ignore') as f:
                 print(f.read())
-            print('\n✏️ Nhập nội dung mới cho plugin (kết thúc bằng một dòng chứa `EOF`):')
+            print(
+                '\n✏️ Nhập nội dung mới cho plugin (kết thúc bằng một dòng chứa `EOF`):'
+                )
             new_lines = []
             while True:
                 line = input()
@@ -138,7 +142,7 @@ class PluginManager:
         except Exception as e:
             print(f'⚠️ Lỗi khi sửa plugin: {e}')
 
-    def delete_plugin(self, command: str) -> None:
+    def delete_plugin(self, command: str) ->None:
         try:
             name_or_index = command.replace('xóa plugin', '').strip()
             if not name_or_index:
@@ -151,7 +155,9 @@ class PluginManager:
             if not os.path.exists(filename):
                 print(f"⚠️ Plugin '{name}' không tồn tại.")
                 return
-            confirm = input(f"❓ Bạn chắc chắn muốn xóa plugin '{name}'? (y/n): ").strip().lower()
+            confirm = input(
+                f"❓ Bạn chắc chắn muốn xóa plugin '{name}'? (y/n): ").strip(
+                ).lower()
             if confirm != 'y':
                 print('❌ Hủy xóa.')
                 return
@@ -165,9 +171,7 @@ class PluginManager:
 def register(assistant):
     assistant.handlers.insert(1, PluginManager(assistant))
 
-plugin_info = {
-    'name': 'plugin_manager',
-    'enabled': True,
-    'register': register,
-    'command_handle': ['quản lý plugin', 'tạo plugin', 'sửa plugin', 'xóa plugin']
-}
+
+plugin_info = {'name': 'plugin_manager', 'enabled': True, 'register':
+    register, 'command_handle': ['quản lý plugin', 'tạo plugin',
+    'sửa plugin', 'xóa plugin']}

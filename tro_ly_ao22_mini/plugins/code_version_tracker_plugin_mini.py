@@ -3,7 +3,7 @@ import hashlib
 import datetime
 import shutil
 SNAPSHOT_FOLDER = 'code_snapshots'
-MAIN_FILE = 'asistanst86_mini.py'
+MAIN_FILE = 'asi_86.py'
 
 
 def plugin_register(assistant):

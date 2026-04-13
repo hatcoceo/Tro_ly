@@ -5,10 +5,15 @@ try:
     from openpyxl import Workbook
 except ImportError:
     raise ImportError('Vui lòng cài đặt openpyxl: pip install openpyxl')
-plugin_info = {'enabled': False, 'register': None, 'command_handle': [
-    'txt2excel', 'convert txt to excel']}
-
-
+    
+plugin_info = {
+    'enabled': True,
+    'register': None,
+    'command_handle': [
+        'txt2excel',
+        'convert txt to excel'
+    ]
+}
 class TxtToExcelHandler:
     """Xử lý lệnh chuyển đổi file txt sang excel"""
 
