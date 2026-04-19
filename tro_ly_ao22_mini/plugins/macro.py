@@ -1,4 +1,4 @@
-# sửa lỗi  python block 
+# thêm : lấy giá trị trả lời của trợ lý ảo lưu vào biến store_var
 import textwrap
 import os
 import sys
@@ -15,6 +15,15 @@ from typing import List, Dict, Any, Optional, Tuple, Callable
 macro_folder = 'macros'
 os.makedirs(macro_folder, exist_ok=True)
 recorder_is_playing = False
+
+# ==============================
+# 1b. Exception cho break/continue
+# ==============================
+class BreakException(Exception):
+    pass
+
+class ContinueException(Exception):
+    pass
 
 # ==============================
 # 2. Macro Recorder (giữ nguyên)
@@ -169,6 +178,9 @@ class ConditionEvaluator:
         if isinstance(val, (int, float, bool)):
             return val
         val = StringUtils.strip_quotes(str(val))
+        # Xử lý từ khóa NONE
+        if val.lower() == 'none':
+            return None
         if val.lower() == 'true':
             return True
         if val.lower() == 'false':
@@ -196,7 +208,7 @@ class AutoInputHelper:
         return self.original_input(prompt)
 
 # ==============================
-# 4. Command Pattern
+# 4. Command Pattern (bổ sung các lệnh mới)
 # ==============================
 class MacroContext:
     def __init__(self, assistant, delay: float, original_input: Callable):
@@ -311,16 +323,22 @@ class ImportCommand(MacroCommand):
         return ret
 
 class RegularCommand(MacroCommand):
-    def __init__(self, command_text: str):
+    def __init__(self, command_text: str, store_var: Optional[str] = None):
         self.command_text = command_text
+        self.store_var = store_var   # biến mới thêm vào để lưu kết quả trả lời của trợ lý ảo
 
     def execute(self, ctx: MacroContext) -> Optional[Any]:
         cmd = VariableResolver.resolve(self.command_text, ctx.variables)
         print(f'⏩ {cmd}')
-        ctx.assistant.process_command(cmd)
+
+        result = ctx.assistant.process_command(cmd)   # 👈 lấy kết quả
+
+        if self.store_var:
+            ctx.variables[self.store_var] = result    # 👈 lưu vào biến macro
+
         return None
 
-# ---------- Lệnh PYTHON mới (có namespace chung) ----------
+# ---------- Lệnh PYTHON ----------
 class PythonCommand(MacroCommand):
     def __init__(self, code: str, store_var: Optional[str] = None):
         self.code = code
@@ -356,7 +374,6 @@ class PythonBlockCommand(MacroCommand):
         if '__builtins__' not in namespace:
             namespace['__builtins__'] = __builtins__
 
-        # Loại bỏ indent chung của toàn bộ block
         dedented_code = textwrap.dedent(self.code)
 
         try:
@@ -371,18 +388,18 @@ class PythonBlockCommand(MacroCommand):
             else:
                 print(f"⚠️ Biến '{self.store_var}' không tồn tại sau khi chạy PYBLOCK")
         return None
-        
-# ---------- Lệnh cấu trúc ----------
+
+# ---------- Lệnh cấu trúc (có bổ sung) ----------
 class IfCommand(MacroCommand):
-    def __init__(self, condition: str, if_block: BlockCommand, else_block: Optional[BlockCommand] = None):
-        self.condition = condition
-        self.if_block = if_block
+    def __init__(self, conditions_blocks: List[Tuple[str, BlockCommand]], else_block: Optional[BlockCommand] = None):
+        self.conditions_blocks = conditions_blocks   # list of (condition, block)
         self.else_block = else_block
 
     def execute(self, ctx: MacroContext) -> Optional[Any]:
-        if ConditionEvaluator.evaluate(self.condition, ctx.variables):
-            return self.if_block.execute(ctx)
-        elif self.else_block:
+        for condition, block in self.conditions_blocks:
+            if ConditionEvaluator.evaluate(condition, ctx.variables):
+                return block.execute(ctx)
+        if self.else_block:
             return self.else_block.execute(ctx)
         return None
 
@@ -398,11 +415,19 @@ class LoopCommand(MacroCommand):
         except ValueError:
             print(f'❌ Lỗi: Số lần lặp không hợp lệ: {count_str}')
             return None
-        for i in range(count):
+        i = 0
+        while i < count:
             ctx.variables['loop_index'] = i + 1
-            ret = self.body.execute(ctx)
-            if ret is not None:
-                return ret
+            try:
+                ret = self.body.execute(ctx)
+                if ret is not None:
+                    return ret
+                i += 1
+            except BreakException:
+                break
+            except ContinueException:
+                i += 1
+                continue
         if 'loop_index' in ctx.variables:
             del ctx.variables['loop_index']
         return None
@@ -418,9 +443,14 @@ class ForeachCommand(MacroCommand):
         items = [item.strip() for item in list_str.split(',') if item.strip() != '']
         for item in items:
             ctx.variables[self.var_name] = item
-            ret = self.body.execute(ctx)
-            if ret is not None:
-                return ret
+            try:
+                ret = self.body.execute(ctx)
+                if ret is not None:
+                    return ret
+            except BreakException:
+                break
+            except ContinueException:
+                continue
         if self.var_name in ctx.variables:
             del ctx.variables[self.var_name]
         return None
@@ -432,9 +462,14 @@ class WhileCommand(MacroCommand):
 
     def execute(self, ctx: MacroContext) -> Optional[Any]:
         while ConditionEvaluator.evaluate(self.condition, ctx.variables):
-            ret = self.body.execute(ctx)
-            if ret is not None:
-                return ret
+            try:
+                ret = self.body.execute(ctx)
+                if ret is not None:
+                    return ret
+            except BreakException:
+                break
+            except ContinueException:
+                continue
         return None
 
 class CallCommand(MacroCommand):
@@ -455,6 +490,105 @@ class CallCommand(MacroCommand):
         if self.store_var is not None and ret is not None:
             ctx.variables[self.store_var] = ret
         return None
+
+# ---------- Lệnh mới: BREAK, CONTINUE ----------
+class BreakCommand(MacroCommand):
+    def execute(self, ctx: MacroContext) -> Optional[Any]:
+        raise BreakException()
+
+class ContinueCommand(MacroCommand):
+    def execute(self, ctx: MacroContext) -> Optional[Any]:
+        raise ContinueException()
+
+# ---------- Lệnh mới: TRY / CATCH ----------
+class TryCommand(MacroCommand):
+    def __init__(self, try_block: BlockCommand, catches: List[Tuple[Optional[str], BlockCommand]]):
+        self.try_block = try_block
+        self.catches = catches   # list of (exception_type_or_None, block)
+
+    def execute(self, ctx: MacroContext) -> Optional[Any]:
+        try:
+            return self.try_block.execute(ctx)
+        except Exception as e:
+            for exc_type, block in self.catches:
+                if exc_type is None or exc_type == type(e).__name__:
+                    # Lưu exception vào biến đặc biệt nếu cần
+                    ctx.variables['exception'] = e
+                    return block.execute(ctx)
+            # Nếu không có catch phù hợp, raise lại
+            raise
+
+# ---------- Lệnh mới: MATCH (pattern matching đơn giản) ----------
+class MatchCommand(MacroCommand):
+    def __init__(self, value_expr: str, cases: List[Tuple[str, BlockCommand]], default_block: Optional[BlockCommand] = None):
+        self.value_expr = value_expr
+        self.cases = cases          # list of (pattern, block)
+        self.default_block = default_block
+
+    def execute(self, ctx: MacroContext) -> Optional[Any]:
+        value = VariableResolver.evaluate_arithmetic(self.value_expr, ctx.variables)
+        for pattern, block in self.cases:
+            # pattern có thể là giá trị cụ thể hoặc từ khóa _ (match all)
+            if pattern == '_':
+                return block.execute(ctx)
+            pat_val = VariableResolver.evaluate_arithmetic(pattern, ctx.variables)
+            if value == pat_val:
+                return block.execute(ctx)
+        if self.default_block:
+            return self.default_block.execute(ctx)
+        return None
+
+# ---------- Lệnh mới: WITH (context manager) ----------
+class WithCommand(MacroCommand):
+    def __init__(self, context_expr: str, as_var: Optional[str], body: BlockCommand):
+        self.context_expr = context_expr
+        self.as_var = as_var
+        self.body = body
+
+    def execute(self, ctx: MacroContext) -> Optional[Any]:
+        # Đánh giá biểu thức context (phải trả về đối tượng có __enter__ và __exit__)
+        resolved = VariableResolver.resolve(self.context_expr, ctx.variables)
+        # Cho phép sử dụng các context manager Python thông qua PYTHON hoặc built-in
+        # Ở đây ta eval trong python_namespace để lấy object
+        namespace = ctx.python_namespace
+        if '__builtins__' not in namespace:
+            namespace['__builtins__'] = __builtins__
+        try:
+            obj = eval(resolved, namespace, {})
+        except Exception as e:
+            print(f"❌ Lỗi WITH: không thể tạo context từ '{resolved}' - {e}")
+            return None
+        # Gọi __enter__
+        try:
+            enter_result = obj.__enter__()
+        except AttributeError:
+            print(f"❌ Lỗi WITH: object {obj} không hỗ trợ context manager")
+            return None
+        if self.as_var is not None:
+            ctx.variables[self.as_var] = enter_result
+        # Thực thi khối lệnh
+        ret = None
+        exc_info = None
+        try:
+            ret = self.body.execute(ctx)
+        except Exception as e:
+            exc_info = (type(e), e, e.__traceback__)
+            # Không raise ngay, để __exit__ xử lý
+        # Gọi __exit__
+        try:
+            if exc_info:
+                obj.__exit__(*exc_info)
+            else:
+                obj.__exit__(None, None, None)
+        except Exception as e:
+            if not exc_info:
+                raise
+            else:
+                # Nếu __exit__ raise exception mới, ưu tiên exception mới
+                raise e
+        if exc_info:
+            raise exc_info[1]  # raise lại exception cũ nếu __exit__ không xử lý
+        return ret
 
 # ==============================
 # 5. Command Registry (OCP)
@@ -485,10 +619,14 @@ class MacroParser:
     @staticmethod
     def find_block_end(lines: List[str], start: int, end: int,
                        start_prefix: str, end_keyword: str,
-                       find_else: bool = False) -> Tuple[int, Optional[int]]:
+                       find_else: bool = False, find_elif: bool = False) -> Tuple[int, List[int]]:
+        """
+        Tìm vị trí kết thúc của block và danh sách các vị trí ELIF/ELSE.
+        Trả về (vị trí end, danh sách các vị trí của ELIF và ELSE theo thứ tự).
+        """
         nested = 1
         j = start + 1
-        else_pos = None
+        extra_positions = []   # (line_number, type) với type là 'elif' hoặc 'else'
         while j < end:
             line = lines[j].strip()
             if line.startswith(start_prefix):
@@ -497,10 +635,12 @@ class MacroParser:
                 nested -= 1
                 if nested == 0:
                     break
+            elif find_elif and line.startswith('ELIF ') and nested == 1:
+                extra_positions.append(('elif', j))
             elif find_else and line == 'ELSE' and nested == 1:
-                else_pos = j
+                extra_positions.append(('else', j))
             j += 1
-        return j, else_pos
+        return j, extra_positions
 
     @staticmethod
     def parse(lines: List[str]) -> Tuple[BlockCommand, Dict[str, BlockCommand]]:
@@ -535,7 +675,7 @@ class MacroParser:
         return children, i
 
 # ==============================
-# 7. Đăng ký các parser (chú ý thứ tự)
+# 7. Đăng ký các parser (có bổ sung)
 # ==============================
 @CommandRegistry.register
 def parse_if(lines, pos, end, functions):
@@ -543,14 +683,32 @@ def parse_if(lines, pos, end, functions):
     if not line.startswith('IF '):
         return None, pos
     condition = line[3:].strip()
-    j, else_pos = MacroParser.find_block_end(lines, pos, end, 'IF ', 'ENDIF', find_else=True)
-    if else_pos is None:
-        if_children, _ = MacroParser._parse_sequence(lines, pos+1, j, functions)
-        return IfCommand(condition, BlockCommand(if_children)), j+1
-    else:
-        if_children, _ = MacroParser._parse_sequence(lines, pos+1, else_pos, functions)
-        else_children, _ = MacroParser._parse_sequence(lines, else_pos+1, j, functions)
-        return IfCommand(condition, BlockCommand(if_children), BlockCommand(else_children)), j+1
+    j, extra = MacroParser.find_block_end(lines, pos, end, 'IF ', 'ENDIF', find_else=True, find_elif=True)
+    # Xây dựng danh sách các khối condition và else
+    conditions_blocks = []
+    current_start = pos + 1
+    # Duyệt theo thứ tự các elif/else
+    for typ, idx in extra:
+        if typ == 'elif':
+            # Đọc điều kiện của ELIF
+            elif_line = lines[idx].strip()
+            elif_cond = elif_line[5:].strip()  # bỏ "ELIF "
+            # Lấy block từ current_start đến idx
+            block_children, _ = MacroParser._parse_sequence(lines, current_start, idx, functions)
+            conditions_blocks.append((condition, BlockCommand(block_children)))
+            condition = elif_cond
+            current_start = idx + 1
+        elif typ == 'else':
+            # Khối if cuối cùng trước else
+            block_children, _ = MacroParser._parse_sequence(lines, current_start, idx, functions)
+            conditions_blocks.append((condition, BlockCommand(block_children)))
+            # Khối else từ idx+1 đến j
+            else_children, _ = MacroParser._parse_sequence(lines, idx+1, j, functions)
+            return IfCommand(conditions_blocks, BlockCommand(else_children)), j+1
+    # Không có else, chỉ có các if/elif
+    block_children, _ = MacroParser._parse_sequence(lines, current_start, j, functions)
+    conditions_blocks.append((condition, BlockCommand(block_children)))
+    return IfCommand(conditions_blocks), j+1
 
 @CommandRegistry.register
 def parse_loop(lines, pos, end, functions):
@@ -658,7 +816,6 @@ def parse_import(lines, pos, end, functions):
         return None, pos + 1
     return ImportCommand(macro_name), pos + 1
 
-# ✅ Parser cho PYTHON (đặt TRƯỚC parse_regular)
 @CommandRegistry.register
 def parse_python(lines, pos, end, functions):
     line = lines[pos].strip()
@@ -684,7 +841,6 @@ def parse_pyblock(lines, pos, end, functions):
         parts = rest.split('->', 1)
         store_var = parts[1].strip()
 
-    # Tìm ENDPYBLOCK
     nested = 1
     j = pos + 1
     while j < end:
@@ -700,25 +856,143 @@ def parse_pyblock(lines, pos, end, functions):
         print("❌ Thiếu ENDPYBLOCK")
         return None, pos + 1
 
-    # Lấy code (giữ nguyên dòng, kể cả khoảng trắng)
     code_lines = []
     for k in range(pos + 1, j):
         code_lines.append(lines[k].rstrip('\n'))
     raw_code = '\n'.join(code_lines)
 
-    # Dedent để loại bỏ khoảng trắng thừa
-    import textwrap
     code = textwrap.dedent(raw_code)
-
     return PythonBlockCommand(code, store_var), j + 1
-    
+
+# ---------- Parser cho BREAK và CONTINUE ----------
+@CommandRegistry.register
+def parse_break(lines, pos, end, functions):
+    line = lines[pos].strip()
+    if line == 'BREAK':
+        return BreakCommand(), pos + 1
+    return None, pos
+
+@CommandRegistry.register
+def parse_continue(lines, pos, end, functions):
+    line = lines[pos].strip()
+    if line == 'CONTINUE':
+        return ContinueCommand(), pos + 1
+    return None, pos
+
+# ---------- Parser cho TRY / CATCH ----------
+@CommandRegistry.register
+def parse_try(lines, pos, end, functions):
+    line = lines[pos].strip()
+    if line != 'TRY':
+        return None, pos
+
+    # Tìm khối try
+    j_try, _ = MacroParser.find_block_end(lines, pos, end, 'TRY', 'ENDTRY')
+    # Trong ENDTRY sẽ chứa các CATCH
+    # Cần phân tích các CATCH bên trong
+    catches = []
+    current = pos + 1
+    while current < j_try:
+        curr_line = lines[current].strip()
+        if curr_line.startswith('CATCH'):
+            # Có thể có dạng CATCH <exception_type> hoặc CATCH (bắt mọi exception)
+            parts = curr_line.split()
+            exc_type = None
+            if len(parts) > 1:
+                exc_type = parts[1].strip()
+            # Tìm block của CATCH này (kết thúc bởi CATCH khác hoặc ENDTRY)
+            next_catch = current + 1
+            while next_catch < j_try:
+                if lines[next_catch].strip().startswith('CATCH') or lines[next_catch].strip() == 'ENDTRY':
+                    break
+                next_catch += 1
+            body_children, _ = MacroParser._parse_sequence(lines, current+1, next_catch, functions)
+            catches.append((exc_type, BlockCommand(body_children)))
+            current = next_catch
+        else:
+            current += 1
+
+    # Lấy try block (từ pos+1 đến trước CATCH đầu tiên hoặc đến j_try)
+    try_end = pos + 1
+    while try_end < j_try and not lines[try_end].strip().startswith('CATCH'):
+        try_end += 1
+    try_children, _ = MacroParser._parse_sequence(lines, pos+1, try_end, functions)
+    try_block = BlockCommand(try_children)
+
+    return TryCommand(try_block, catches), j_try + 1
+
+# ---------- Parser cho MATCH ----------
+@CommandRegistry.register
+def parse_match(lines, pos, end, functions):
+    line = lines[pos].strip()
+    if not line.startswith('MATCH '):
+        return None, pos
+    value_expr = line[6:].strip()
+    j, _ = MacroParser.find_block_end(lines, pos, end, 'MATCH ', 'ENDMATCH')
+    # Phân tích các CASE bên trong
+    cases = []
+    default_block = None
+    current = pos + 1
+    while current < j:
+        curr_line = lines[current].strip()
+        if curr_line.startswith('CASE '):
+            pattern = curr_line[5:].strip()
+            # Tìm block của CASE này
+            next_case = current + 1
+            while next_case < j:
+                nxt = lines[next_case].strip()
+                if nxt.startswith('CASE ') or nxt.startswith('DEFAULT') or nxt == 'ENDMATCH':
+                    break
+                next_case += 1
+            body_children, _ = MacroParser._parse_sequence(lines, current+1, next_case, functions)
+            cases.append((pattern, BlockCommand(body_children)))
+            current = next_case
+        elif curr_line.startswith('DEFAULT'):
+            next_default = current + 1
+            while next_default < j:
+                if lines[next_default].strip().startswith('CASE ') or lines[next_default].strip() == 'ENDMATCH':
+                    break
+                next_default += 1
+            body_children, _ = MacroParser._parse_sequence(lines, current+1, next_default, functions)
+            default_block = BlockCommand(body_children)
+            current = next_default
+        else:
+            current += 1
+    return MatchCommand(value_expr, cases, default_block), j + 1
+
+# ---------- Parser cho WITH ----------
+@CommandRegistry.register
+def parse_with(lines, pos, end, functions):
+    line = lines[pos].strip()
+    if not line.startswith('WITH '):
+        return None, pos
+    rest = line[5:].strip()
+    as_var = None
+    if ' AS ' in rest:
+        context_part, var_part = rest.split(' AS ', 1)
+        context_expr = context_part.strip()
+        as_var = var_part.strip()
+    else:
+        context_expr = rest
+        as_var = None
+    j, _ = MacroParser.find_block_end(lines, pos, end, 'WITH ', 'ENDWITH')
+    body_children, _ = MacroParser._parse_sequence(lines, pos+1, j, functions)
+    return WithCommand(context_expr, as_var, BlockCommand(body_children)), j + 1
+
 # ✅ Parser cho lệnh thường (phải đăng ký SAU CÙNG)
 @CommandRegistry.register
 def parse_regular(lines, pos, end, functions):
     line = lines[pos].strip()
-    if line.startswith('FUNCTION ') or line == 'ENDFUNCTION':
+
+    if line.startswith(('FUNCTION ', 'IF ', 'LOOP ', 'FOREACH ', 'WHILE ', 'CALL ', 'SET ', 'INPUT ', 'PRINT ', '? ', 'RETURN ', 'IMPORT ', 'PYTHON ', 'PYBLOCK ', 'BREAK', 'CONTINUE', 'TRY', 'MATCH ', 'WITH ')):
         return None, pos
-    return RegularCommand(line), pos+1
+
+    # 👇 hỗ trợ lưu kết quả vào biến store_var
+    if ' -> ' in line:
+        cmd, var = line.split(' -> ', 1)
+        return RegularCommand(cmd.strip(), var.strip()), pos + 1
+
+    return RegularCommand(line), pos + 1
 
 # ==============================
 # 8. Macro Executor
@@ -807,5 +1081,5 @@ plugin_info = {
     'register': lambda assistant: assistant.handlers.append(MacroCommandHandler(assistant)),
     'methods': [],
     'classes': [MacroRecorder, MacroCommandHandler],
-    'description': 'Ghi và chạy macro với IF/ELSE, LOOP, FOREACH, WHILE, FUNCTION/CALL/RETURN, INPUT, SET, ?, PRINT, IMPORT, và PYTHON (tận dụng toàn bộ thư viện Python)'
+    'description': 'Ghi và chạy macro với IF/ELIF/ELSE, LOOP, FOREACH, WHILE, FUNCTION/CALL/RETURN, INPUT, SET, ?, PRINT, IMPORT, PYTHON, BREAK, CONTINUE, TRY/CATCH, MATCH/CASE, WITH'
 }
