@@ -43,8 +43,7 @@ class VirtualAssistant:
         self.loader = PluginLoader()
         self.context: Dict[str, Any] = {}
 
-    def process_command(self, command: str) -> bool:
-        """Xử lý lệnh từ người dùng"""
+    def process_command(self, command: str):
         command = command.strip().lower()
         
         if command in ['exit', 'quit', 'thoát']:
@@ -54,15 +53,21 @@ class VirtualAssistant:
         for handler in self.handlers:
             if hasattr(handler, 'can_handle') and handler.can_handle(command):
                 if hasattr(handler, 'handle'):
-                    handler.handle(command)
-                    return True
-                
+                    result = handler.handle(command)
+    
+                    # ✅ Nếu plugin KHÔNG return → giữ behavior cũ
+                    if result is None:
+                        return True
+    
+                    # ✅ Nếu plugin có return → dùng cho macro
+                    return result
+                    
         print("🤷 Tôi không hiểu lệnh đó")
         return True
         
     def run(self) -> None:
         """Vòng lặp chính"""
-        print("🤖 Xin chào, tôi là trợ lý ảo (Asi-1)")
+        print("🤖 Xin chào, tôi là trợ lý ảo (Asi-86)")
         print("Nhập 'exit' để thoát. \n")
         
         while True:
