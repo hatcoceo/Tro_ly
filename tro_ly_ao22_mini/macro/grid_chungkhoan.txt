@@ -1,0 +1,5 @@
+SET mck = "gas"
+SET gia = "120"
+grid create {gia} 0.15 1
+grid batch {mck}.xlsx 
+grid history 

@@ -1,0 +1,13 @@
+SET choice = "C"
+MATCH {choice}
+    CASE "A"
+        PRINT "Chọn A: Thêm mới"
+    CASE "B"
+        PRINT "Chọn B: Sửa"
+    CASE "C"
+        PRINT "Chọn C: Xóa"
+    CASE "D"
+        PRINT "Chọn D: Thoát"
+    DEFAULT
+        PRINT "Lựa chọn không hợp lệ"
+ENDMATCH

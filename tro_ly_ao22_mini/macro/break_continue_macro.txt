@@ -1,0 +1,14 @@
+SET count = 0
+LOOP 10
+    SET count = {count} + 1
+    IF {count} == 3
+        PRINT "  Bỏ qua số 3 (CONTINUE)"
+        CONTINUE
+    ENDIF
+    IF {count} == 7
+        PRINT "  Dừng ở số 7 (BREAK)"
+        BREAK
+    ENDIF
+    PRINT "  Đã xử lý số: {count}"
+ENDLOOP
+PRINT "Kết thúc vòng lặp, count = {count}"

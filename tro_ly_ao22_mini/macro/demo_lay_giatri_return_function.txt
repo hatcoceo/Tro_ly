@@ -1,0 +1,18 @@
+FUNCTION kiem_tra
+    SET attempts = 0
+    WHILE {attempts} < 3
+        ? "Nhập mật khẩu:" 
+        IF "{answer}" == "123456"
+            PRINT "✅ Đăng nhập thành công!"
+            RETURN 1
+        ELSE
+            SET attempts = {attempts} + 1
+            PRINT "❌ Sai mật khẩu ({attempts}/3)"
+        ENDIF
+    ENDWHILE
+    PRINT "🚫 Sai quá 3 lần. Thoát!"
+    RETURN 0
+ENDFUNCTION
+
+CALL kiem_tra -> ket_qua
+PRINT "Kết quả return = {ket_qua}"

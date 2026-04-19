@@ -1,0 +1,8 @@
+PYBLOCK -> ket_qua
+    import random
+    x = random.randint(1, 100)
+    y = x * 2
+    print(f"Giá trị ngẫu nhiên: {x}")
+    ket_qua = y
+ENDPYBLOCK
+PRINT {ket_qua}

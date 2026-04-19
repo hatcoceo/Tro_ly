@@ -1,0 +1,50 @@
+SET matkhau_fb = "12345"
+FUNCTION getdata_chungkhoan
+SET mck = "bid"
+INPUT {mck}
+INPUT {mck}.txt
+INPUT {mck}.xlsx
+getdata {mck}
+lưu hội thoại
+txt2excel
+excel -f {mck}.xlsx delrows 1 37
+excel -f {mck}.xlsx header "Time" "Open" "High" "Low" "Close" "Volume"
+excel -f {mck}.xlsx delcol 7
+excel -f {mck}.xlsx delcol 7
+excel -f {mck}.xlsx autofit
+excel -f {mck}.xlsx delrows 247 248
+excel -f {mck}.xlsx colorminmax 5
+ENDFUNCTION
+
+FUNCTION word_count
+count word.txt --no-number
+ENDFUNCTION
+
+FUNCTION excel_crud 
+ excel create
+ excel add 100 120 130
+ excel read
+ excel update 2 1 999
+ excel delete 2
+ excel find 120
+ excel avg
+ excel chart
+ excel avg_range 1 2 3
+ENDFUNCTION
+
+FUNCTION xddm_chungkhoan
+SET mck = "gas"
+SET gia = "120"
+grid create {gia} 0.15 1
+grid batch {mck}.xlsx 
+grid history 
+ENDFUNCTION 
+
+FUNCTION tinh_tong
+? Nhập số thứ nhất:
+SET a = {answer}
+? Nhập số thứ hai:
+SET b = {answer}
+SET tong = {a} + {b}
+PRINT Tổng của {a} + {b} = {tong}
+ENDFUNCTION 

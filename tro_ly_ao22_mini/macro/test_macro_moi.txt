@@ -1,0 +1,160 @@
+IMPORT function_macro
+ghi macro demo2
+hôm nay là thứ mấy 
+dừng ghi macro 
+PRINT "1- Test xong ghi macro"
+
+SET items=Hà Nội,Đà Nẵng,TP HCM
+FOREACH city IN {items}
+  ? Bạn muốn nhập đường gì cho {city}? auto: Đường Dân Chủ
+  SET address={city} - {answer}
+  Gửi tin nhắn đến admin: Địa chỉ {address}
+  ENDFOREACH
+  PRINT "2 - Test xong foreach"
+
+PRINT "Chương trình mẫu"
+SET ten = "An"
+PRINT "Xin chào {ten}"
+? Bạn bao nhiêu tuổi? auto: "15"
+IF {answer} >= 18
+    PRINT "Bạn đã trưởng thành"
+ELSE
+    PRINT "Bạn còn nhỏ"
+ENDIF
+
+LOOP 3
+    PRINT "Lặp"
+ENDLOOP
+PRINT " Test xong Loop"
+
+FUNCTION chao
+    PRINT "Chào từ hàm"
+ENDFUNCTION
+CALL chao
+PRINT "Test xong function"
+
+SET mck = "bid"
+INPUT {mck}
+INPUT {mck}.txt
+INPUT {mck}.xlsx
+getdata {mck}
+lưu hội thoại
+txt2excel
+PRINT "Test xong INPUT"
+
+CALL word_count
+PRINT "Test xong import"
+
+SET name = "An"
+PRINT "Xin chào {name}"
+
+IF {name} == "An"
+    PRINT "Đúng người"
+ENDIF
+
+SET count = 1
+WHILE {count} <= 5
+    PRINT Giá trị count = {count}
+    SET count = {count} + 1
+ENDWHILE
+PRINT "Test xong while"
+
+? Nhập số thứ nhất:
+SET a = {answer}
+? Nhập số thứ hai:
+SET b = {answer}
+SET tong = {a} + {b}
+PRINT Tổng của {a} + {b} = {tong}
+
+PRINT "=== TEST SỐ ==="
+SET a = 5
+SET b = 10
+IF {a}  < {b} AND TRUE
+    PRINT "So sánh + AND OK"
+ENDIF
+IF {a}  > {b}  OR TRUE
+    PRINT "So sánh + OR OK"
+ENDIF
+
+
+SET ok = TRUE
+SET count = -5
+IF {ok} == TRUE AND {count}  > 0
+    PRINT "Điều kiện đúng"
+ ELSE 
+  PRINT " Điều kiện sai"
+ENDIF
+
+SET age = 20
+SET has_id = FALSE
+IF  {age}  >= 18 AND {has_id}
+    PRINT "Được vào"
+ELSE 
+    PRINT "Không được vào"
+ENDIF
+
+SET n = 5
+PYTHON import random
+LOOP {n}
+    PYTHON random.randint(1,100) -> num
+    PRINT "Số random: {num}"
+ENDLOOP
+PRINT " Test xong python"
+
+PYBLOCK -> ket_qua
+    import random
+    x = random.randint(1, 100)
+    y = x * 2
+    print(f"Giá trị ngẫu nhiên: {x}")
+    ket_qua = y
+ENDPYBLOCK
+PRINT {ket_qua}
+PRINT "Test xong pyblock"
+
+SET attempts = 0
+
+WHILE {attempts} < 3
+    ? "Nhập mật khẩu:" 
+    IF "{answer}" == "123456"
+        PRINT "✅ Đăng nhập thành công!"
+        RETURN 1
+    ELSE
+        SET attempts = {attempts} + 1
+        PRINT "❌ Sai mật khẩu ({attempts}/3)"
+    ENDIF
+ENDWHILE
+
+PRINT "🚫 Sai quá 3 lần. Thoát!"
+RETURN 0
+
+SET count = 0
+LOOP 10
+    SET count = {count} + 1
+    IF {count} == 3
+        PRINT "  Bỏ qua số 3 (CONTINUE)"
+        CONTINUE
+    ENDIF
+    IF {count} == 7
+        PRINT "  Dừng ở số 7 (BREAK)"
+        BREAK
+    ENDIF
+    PRINT "  Đã xử lý số: {count}"
+ENDLOOP
+PRINT "Kết thúc vòng lặp, count = {count}"
+PRINT "Test xong continue và break"
+
+thứ mấy   -> day
+PRINT "Hôm nay là {day}"
+IF {day} == "Chủ Nhật"
+    PRINT "NGHỈ NGƠI"
+ELSE 
+ PRINT "Đi làm"
+ENDIF
+PRINT " Test xong lấy kết quả từ trợ lý ảo"
+
+count word.txt --no-number -> so_tu
+IF {so_tu} > 500
+    PRINT "BẠN ĐÃ VIẾT ĐƯỢC NHIỀU"
+ ELSE 
+ PRINT "Bạn đang viết được ít đó"
+ENDIF

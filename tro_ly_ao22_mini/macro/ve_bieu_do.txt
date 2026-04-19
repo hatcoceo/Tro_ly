@@ -1,0 +1,2 @@
+convert bieu_do.txt
+plot bieu_do.txt

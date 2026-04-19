@@ -1,0 +1,9 @@
+excel create
+excel add 100 120 130
+excel read
+excel update 2 1 999
+excel delete 2
+excel find 120
+excel avg
+excel chart
+excel avg_range 1 2 3

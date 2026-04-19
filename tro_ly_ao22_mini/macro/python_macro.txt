@@ -1,0 +1,19 @@
+PYTHON len("xin chào") -> do_dai
+PRINT Độ dài: {do_dai}
+PYTHON import math
+PYTHON math.sqrt(16) -> can_bon
+PRINT Căn bậc 2 của 16 là {can_bon}
+PYTHON [i**2 for i in range(5)] -> binh_phuong
+PRINT {binh_phuong}
+PYTHON import datetime
+PYTHON datetime.datetime.now().strftime("%H:%M:%S") -> gio
+PRINT Bây giờ là {gio}
+
+SET n = 5
+
+PYTHON import random
+
+LOOP {n}
+    PYTHON random.randint(1,100) -> num
+    PRINT "Số random: {num}"
+ENDLOOP

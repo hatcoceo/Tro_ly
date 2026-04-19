@@ -1,0 +1,7 @@
+count word.txt --no-number -> so_tu
+
+IF {so_tu} > 500
+    PRINT "BẠN ĐÃ VIẾT ĐƯỢC NHIỀU"
+ ELSE 
+ PRINT "Bạn đang viết được ít đó"
+ENDIF

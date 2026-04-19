@@ -1,0 +1,14 @@
+SET mck = "bid"
+INPUT {mck}
+INPUT {mck}.txt
+INPUT {mck}.xlsx
+getdata {mck}
+lưu hội thoại
+txt2excel
+excel -f {mck}.xlsx delrows 1 37
+excel -f {mck}.xlsx header "Time" "Open" "High" "Low" "Close" "Volume"
+excel -f {mck}.xlsx delcol 7
+excel -f {mck}.xlsx delcol 7
+excel -f {mck}.xlsx autofit
+excel -f {mck}.xlsx delrows 247 248
+excel -f {mck}.xlsx colorminmax 5
