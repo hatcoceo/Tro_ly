@@ -1,50 +1,44 @@
-SET matkhau_fb = "12345"
-FUNCTION getdata_chungkhoan
-SET mck = "bid"
-INPUT {mck}
-INPUT {mck}.txt
-INPUT {mck}.xlsx
-getdata {mck}
-lưu hội thoại
-txt2excel
-excel -f {mck}.xlsx delrows 1 37
-excel -f {mck}.xlsx header "Time" "Open" "High" "Low" "Close" "Volume"
-excel -f {mck}.xlsx delcol 7
-excel -f {mck}.xlsx delcol 7
-excel -f {mck}.xlsx autofit
-excel -f {mck}.xlsx delrows 247 248
-excel -f {mck}.xlsx colorminmax 5
+FUNCTION excel_create(name)
+    excel -f $name.xlsx create
 ENDFUNCTION
 
-FUNCTION word_count
-count word.txt --no-number
+FUNCTION excel_create2(name)
+    PYTHON __import__("os").path.exists("{name}.xlsx") -> exists
+    ASSERT {exists} == FALSE, "File đã tồn tại"
+    excel -f {name}.xlsx create
 ENDFUNCTION
 
-FUNCTION excel_crud 
- excel create
- excel add 100 120 130
- excel read
- excel update 2 1 999
- excel delete 2
- excel find 120
- excel avg
- excel chart
- excel avg_range 1 2 3
+FUNCTION excel_create3(answer)
+? Nhập tên file 
+    excel -f {answer}.xlsx create
 ENDFUNCTION
 
-FUNCTION xddm_chungkhoan
-SET mck = "gas"
-SET gia = "120"
-grid create {gia} 0.15 1
-grid batch {mck}.xlsx 
-grid history 
+FUNCTION list_file()
+    SILENT pls -> files
+    RETURN files
+ENDFUNCTION
+
+FUNCTION delete_file(answer)
+? Xóa file 
+pdelete {answer}
 ENDFUNCTION 
 
-FUNCTION tinh_tong
-? Nhập số thứ nhất:
-SET a = {answer}
-? Nhập số thứ hai:
-SET b = {answer}
-SET tong = {a} + {b}
-PRINT Tổng của {a} + {b} = {tong}
+FUNCTION read_file(answer)
+? Nhập tên file 
+SILENT pread {answer}
 ENDFUNCTION 
+
+FUNCTION file_exits()
+? kiểm tra 
+CALL list_file() -> result
+IF {answer} IN {result}
+RETURN TRUE
+ELSE 
+RETURN FALSE 
+ENDIF 
+
+ENDFUNCTION 
+
+
+
+

@@ -1,7 +1,10 @@
-count word.txt --no-number -> so_tu
-
-IF {so_tu} > 500
-    PRINT "BẠN ĐÃ VIẾT ĐƯỢC NHIỀU"
- ELSE 
- PRINT "Bạn đang viết được ít đó"
+? Nhập mức thụt lề
+SET cap_thut_le = answer
+IF answer == ""
+    PRINT Không có thụt lề, dùng mặc định 1
+    hiển thị thụt lề thut_le.py 1
+ELSE
+    PRINT Dùng thụt lề $cap_thut_le
+    hiển thị thụt lề thut_le.py $cap_thut_le
 ENDIF
+phục hồi thụt lề thut_le_indent.py

@@ -1,0 +1,31 @@
+SET name = "An"
+PRINT "Xin chào {name}"
+
+IF {name} == "An"
+    PRINT "Đúng người"
+ELSE
+    PRINT "Sai người"
+ENDIF
+
+SET score = 70
+IF {score}  >= 90
+    PRINT "Hạng A"
+ELIF {score} >= 80
+    PRINT "Hạng B"
+ELIF {score}  >= 70
+    PRINT "Hạng C"
+ELIF {score} >= 60
+    PRINT "Hạng D"
+ELSE
+    PRINT "Hạng F"
+ENDIF
+
+? nhập số điện thoại
+
+SILENT kiểm tra số "{answer}" -> a
+
+IF {a} IS TRUE
+PRINT SỐ HỢP LỆ 
+ELIF {a} IS FALSE 
+PRINT SỐ KHÔNG HỢP LỆ 
+ENDIF 

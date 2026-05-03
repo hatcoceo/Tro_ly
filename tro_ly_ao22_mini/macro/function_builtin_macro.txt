@@ -1,0 +1,29 @@
+FUNCTION len(x)
+    PYTHON len({x}) -> result
+    RETURN result
+ENDFUNCTION
+
+FUNCTION sum(x)
+    PYTHON sum({x}) -> result
+    RETURN result
+ENDFUNCTION
+
+FUNCTION max(x)
+    PYTHON max({x}) -> result
+    RETURN result
+ENDFUNCTION
+
+FUNCTION min(x)
+    PYTHON min({x}) -> result
+    RETURN result
+ENDFUNCTION
+
+FUNCTION str(x)
+    PYTHON str({x}) -> result
+    RETURN result
+ENDFUNCTION
+
+FUNCTION int(x)
+    PYTHON int({x}) -> result
+    RETURN result
+ENDFUNCTION

@@ -11,3 +11,15 @@ MATCH {choice}
     DEFAULT
         PRINT "Lựa chọn không hợp lệ"
 ENDMATCH
+
+? nhập số điện thoại
+SILENT kiểm tra số "{answer}" -> a
+MATCH {a}
+  CASE "True"
+            PRINT "HỢP LỆ"
+        CASE "False"
+            PRINT "KHÔNG HỢP LỆ"
+            DEFAULT 
+        PRINT "Không xác định"
+ENDMATCH
+

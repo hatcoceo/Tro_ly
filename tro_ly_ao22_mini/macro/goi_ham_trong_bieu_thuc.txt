@@ -1,0 +1,24 @@
+FUNCTION add(a, b)
+    RETURN a + b
+ENDFUNCTION
+
+FUNCTION mul(a, b=2)
+    RETURN a * b
+ENDFUNCTION
+
+FUNCTION square(x)
+    RETURN mul(x, x)
+ENDFUNCTION
+
+FUNCTION combo(a, b)
+    RETURN add(square(a), mul(b, 3))
+ENDFUNCTION
+
+PRINT combo(3,4) 
+
+CALL add(2, 3) -> x
+CALL mul(x, 4) -> y
+PRINT y
+PRINT mul(add(2, 3), 4)
+
+SET result = add(square(2), mul(add(1,1), 3))

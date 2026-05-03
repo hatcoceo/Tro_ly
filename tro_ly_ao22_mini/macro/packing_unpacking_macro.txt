@@ -1,0 +1,57 @@
+
+SET a, b, c = [1, 2, 3]
+PRINT "a={a}, b={b}, c={c}"
+
+
+SET x, *mid, y = [10, 20, 30, 40, 50]
+PRINT "x={x}, mid={mid}, y={y}"
+
+FUNCTION demo_pack(a, b, c)
+    PRINT "a={a}, b={b}, c={c}"
+ENDFUNCTION
+
+SET arr = [1, 2, 3]
+
+SET data = [(1,2), (3,4), (5,6)]
+
+FOREACH a, b IN data
+    PRINT "{a} + {b} = {a + b}"
+ENDFOREACH
+CALL demo_pack(*arr)
+
+SET data = [(1,2,3,4), (5,6,7,8)]
+
+FOREACH a, *mid, z IN data
+    PRINT "a={a}, mid={mid}, z={z}"
+ENDFOREACH
+
+FUNCTION get_values()
+    RETURN 10, 20, 30
+ENDFUNCTION
+
+CALL get_values() -> result
+PRINT "result={result}"
+
+SET a, b, c = result
+PRINT "a={a}, b={b}, c={c}"
+
+FUNCTION sum3(a, b, c)
+    RETURN a + b + c
+ENDFUNCTION
+
+SET values = [5, 10, 15]
+
+CALL sum3(*values) -> total
+PRINT "total={total}"
+
+SET a = 1
+SET b = 2
+SET c = 3
+
+SET data = [a, b, c]
+PRINT {data}
+
+SET data = (1, 2, 3)
+
+SET a, b, c = {data}
+PRINT (a, b, c)

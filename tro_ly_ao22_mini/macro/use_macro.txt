@@ -1,0 +1,10 @@
+IMPORT function_macro 
+IMPORT function_builtin_macro 
+SET lf = list_file()
+PRINT "{lf}"
+
+CALL len({list_file}) -> result 
+PRINT "{result}"
+IF {result} > 20
+PRINT "Bạn đang quá nhiều file"
+ENDIF 

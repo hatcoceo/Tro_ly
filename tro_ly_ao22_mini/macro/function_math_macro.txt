@@ -1,0 +1,12 @@
+FUNCTION add(a, b)
+    RETURN a + b
+ENDFUNCTION
+
+FUNCTION square(x)
+    RETURN x * x
+ENDFUNCTION
+
+FUNCTION cube(x)
+    RETURN x * x * x
+ENDFUNCTION
+

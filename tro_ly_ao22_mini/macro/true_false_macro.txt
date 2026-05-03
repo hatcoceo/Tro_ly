@@ -1,0 +1,75 @@
+SET value = 42
+IF value > 10 AND TRUE
+    PRINT "✅ TRUE được dùng, điều kiện đúng"
+ELSE
+    PRINT "❌ Không chạy"
+ENDIF
+IF FALSE
+    PRINT "❌ FALSE làm điều kiện sai"
+ELSE
+    PRINT "✅ ELSE chạy vì điều kiện FALSE"
+ENDIF
+IF value < 10 OR FALSE
+    PRINT "❌ Cả hai đều FALSE nên không vào IF"
+ELSE
+    PRINT "✅ Điều kiện sai, rẽ vào ELSE"
+ENDIF
+IF NOT FALSE
+    PRINT "✅ NOT FALSE tương đương TRUE"
+ENDIF
+IF TRUE AND (value == 42)
+    PRINT "✅ Kết hợp TRUE với biểu thức đúng"
+ENDIF
+PRINT "Test xong TRUE / FALSE cơ bản"
+
+SET a = 5
+SET b = 12
+SET c = "hello"
+SET d = FALSE
+
+IF (a > 3 AND b < 15) OR (c == "hello" AND NOT d)
+    PRINT "✅ Điều kiện phức tạp đúng"
+ELSE
+    PRINT "❌ Sai"
+ENDIF
+
+IF (a IN [1,2,3,4,5]) AND (b NOT IN [10,20,30])
+    PRINT "✅ a nằm trong list, b không nằm"
+ENDIF
+
+IF "he" IN c AND (a + b == 17 OR TRUE)
+    PRINT "✅ Kết hợp chuỗi, số học và TRUE"
+ENDIF
+PRINT "Test xong TRUE/ FALSE PHỨC TẠP "
+
+SET name = "An"
+PRINT "Xin chào {name}"
+
+IF {name} == "An"
+    PRINT "Đúng người"
+ELSE
+    PRINT "Sai người"
+ENDIF
+
+SET score = 70
+IF {score}  >= 90
+    PRINT "Hạng A"
+ELIF {score} >= 80
+    PRINT "Hạng B"
+ELIF {score}  >= 70
+    PRINT "Hạng C"
+ELIF {score} >= 60
+    PRINT "Hạng D"
+ELSE
+    PRINT "Hạng F"
+ENDIF
+
+? nhập số điện thoại
+
+SILENT kiểm tra số "{answer}" -> a
+
+IF {a} IS TRUE
+PRINT SỐ HỢP LỆ 
+ELIF {a} IS FALSE 
+PRINT SỐ KHÔNG HỢP LỆ 
+ENDIF 

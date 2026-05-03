@@ -1,0 +1,23 @@
+PRINT " Test RAISE nâng cao"
+SET action = "divide"
+SET a = 10
+SET b = 0
+
+TRY
+    MATCH {action}
+        CASE "add"
+            SET result = {a} + {b}
+        CASE "divide"
+            IF {b} == 0
+                RAISE "Chia cho 0"
+            ENDIF
+            SET result = {a} / {b}
+        CASE _
+            RAISE "Action không hợp lệ"
+    ENDMATCH
+
+    PRINT "Kết quả: {result}"
+
+EXCEPT as e
+    PRINT "Lỗi: {e}"
+ENDTRY

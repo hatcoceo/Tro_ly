@@ -1,0 +1,58 @@
+SET user = ("An", 25, "HCM")
+SET name, age, city = {user}
+PRINT "First: {user[0]}"
+
+
+SET my_list = [10, 20, 30, 40, 50]
+
+PRINT my_list[0]       
+PRINT my_list[-1]      
+PRINT my_list[1:4]     
+PRINT my_list[::2]     
+
+PRINT [10,20,30,40,50][0]     
+PRINT "hello"[1:3]              
+SET x = 5
+PRINT x * 3     
+
+SET my_list2 = ["một", "hai", "ba", "bốn", "năm"]
+
+PRINT my_list2[0]       
+PRINT my_list2[-1]      
+PRINT my_list2[1:4]     
+PRINT my_list2[::2]     
+
+PRINT "Phần tử đầu: " + my_list2[0]
+
+SET a = "hello"
+PRINT a[1:3]           
+
+SET b = {"x": 10, "y": 20}
+
+PRINT b["x"]   
+PRINT b["y"]    
+
+SET users = [{"name":"A"},{"name":"B"}]
+
+FOREACH u IN users
+    PRINT u["name"]
+ENDFOREACH
+
+PRINT Test xong slicing                
+
+SET mylist = [10, 20, 30, 40, 50, 60, 70]
+SET mystr = "Xin chào macro"
+
+PRINT mylist[2:5]          
+PRINT mylist[::-1]         
+PRINT mylist[-3:]          
+PRINT mystr[4:9]         
+PRINT mystr[::2]           
+
+SET sublist = mylist[1:6:2]
+PRINT sublist
+SET users = [{"name":"A"},{"name":"B"}]
+
+FOREACH u IN users
+    PRINT u["name"]
+ENDFOREACH

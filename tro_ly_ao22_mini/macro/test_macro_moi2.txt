@@ -1,15 +1,16 @@
-IMPORT function_macro
 
+IMPORT function_macro
+INPUT 6
 ghi macro demo2
-chạy macro thut_le
+chạy macro thut_le2
 dừng ghi macro 
 PRINT "1- Test xong ghi macro"
 
 PRINT "Bắt đầu test ? và auto"
 SET ten = "An"
-PRINT "Xin chào {ten}"
+PRINT "Xin chào $ten"
 ? Bạn bao nhiêu tuổi? auto: "15"
-IF {answer} >= 18
+IF $answer >= 18
     PRINT "Bạn đã trưởng thành"
 ELSE
     PRINT "Bạn còn nhỏ"
@@ -22,47 +23,46 @@ ENDLOOP
 PRINT " Test xong LOOP"
 
 FOREACH x IN [1,2,3,4,5]
-IF {x} == 3
+IF $x == 3
 BREAK
 ENDIF
-PRINT {x}
+PRINT $x
 ENDFOREACH
 
 FOREACH x IN ["một", "hai", "ba", "bốn"]
-IF {x} == "ba"
+IF $x == "ba"
 BREAK
 ENDIF
-PRINT {x}
+PRINT $x
 ENDFOREACH
 PRINT "Test xong FOREACH có BREAK"
 
-FOREACH x IN 1,2,3,4
-IF {x} == 2
+FOREACH x IN 1, 2, 3, 4
+IF $x == 2
 CONTINUE
 ENDIF
-PRINT {x}
+PRINT $x
 ENDFOREACH
 PRINT "Test xong FOREACH có CONTINUE"
 
 thứ mấy -> answer 
-IF {answer} == "Thứ Bảy"
+IF $answer == "Thứ Bảy"
     PRINT "Đi làm"
  ELSE 
  PRINT "Nghỉ ngơi"
 ENDIF
-PRINT "TEST XONG LẤY DỮ LIỆU CỦA TRỢ LÝ"
-
+PRINT "TEST XONG LẤY DỮ LIỆU CỦA TRỢ LÝ 
 
 SET count = 1
-WHILE {count} <= 5
-    PRINT Giá trị count = {count}
-    SET count = {count} + 1
+WHILE $count <= 5
+    PRINT Giá trị count = $count
+    SET count = $count + 1
 ENDWHILE
 PRINT "Test xong WHILE"
 
 SET lam_bai_tap = TRUE
 SET di_hoc_dung_gio = FALSE
-IF {lam_bai_tap} AND {di_hoc_dung_gio}
+IF lam_bai_tap AND di_hoc_dung_gio
     PRINT "Được khen"
 ELSE
     PRINT "Bị nhắc nhở"
@@ -71,7 +71,7 @@ PRINT "Test xong AND"
 
 SET co_tien = FALSE
 SET duoc_bao = TRUE
-IF {co_tien} OR {duoc_bao}
+IF $co_tien OR $duoc_bao
     PRINT "Đi ăn"
 ELSE
     PRINT "Không đi"
@@ -79,8 +79,8 @@ ENDIF
 PRINT " Test xong OR"
 
 SET x = 3
-IF NOT {x} > 5
-    PRINT "{x} không lớn hơn 5"
+IF NOT $x > 5
+    PRINT " $x không lớn hơn 5"
 ENDIF
 PRINT " Test xong NOT"
 
@@ -89,28 +89,28 @@ SET y = 10
 SET z = "10"
 SET lst = [1, 2, 3, 10]
 SET txt = "Hello world"
-IF {x} IS {y}
+IF $x IS $y
     PRINT "x và y cùng đối tượng (thực tế cùng giá trị int)"
 ENDIF
-IF {x} IS NOT {z}
+IF $x IS NOT $z
     PRINT "x là int, z là str → không cùng identity"
 ENDIF
-IF 10 IN {lst}
+IF 10 IN $lst
     PRINT "10 có trong list"
 ENDIF
-IF "world" IN {txt}
+IF "world" IN $txt
     PRINT "world là substring của txt"
 ENDIF
-IF 99 NOT IN {lst}
+IF 99 NOT IN $lst
     PRINT "99 không có trong lst"
 ENDIF
 PRINT "Test xong IS, IS NOT, IN, NOT IN"
 
 SET n = 5
 PYTHON import random
-LOOP {n}
+LOOP $n
     PYTHON random.randint(1,100) -> num
-    PRINT "Số random: {num}"
+    PRINT "Số random: $num"
 ENDLOOP
 PRINT " Test xong PYTHON"
 
@@ -121,50 +121,47 @@ PYBLOCK -> ket_qua
     print(f"Giá trị ngẫu nhiên: {x}")
     ket_qua = y
 ENDPYBLOCK
-PRINT {ket_qua}
+PRINT $ket_qua
 PRINT "Test xong PYBLOCK"
 
 CALL excel_create(nhom_kinh2)
 PRINT "Test xong IMPORT"
-
 SET count = 0
 LOOP 10
-    SET count = {count} + 1
-    IF {count} == 3
+    SET count = $count + 1
+    IF $count == 3
         PRINT "  Bỏ qua số 3 (CONTINUE)"
         CONTINUE
     ENDIF
-    IF {count} == 7
+    IF $count == 7
         PRINT "  Dừng ở số 7 (BREAK)"
         BREAK
     ENDIF
-    PRINT "  Đã xử lý số: {count}"
+    PRINT "  Đã xử lý số: $count"
 ENDLOOP
-PRINT "Kết thúc vòng lặp, count = {count}"
+PRINT "Kết thúc vòng lặp, count = $count"
 PRINT "Test xong CONTINUE  và BREAK"
-
 SET action = "divide"
 SET a = 10
 SET b = 0
 TRY
-    MATCH {action}
+    MATCH $action
         CASE "add"
-            SET result = {a} + {b}
+            SET result = $a + $b
         CASE "divide"
-            IF {b} == 0
+            IF $b == 0
                 RAISE "Chia cho 0"
             ENDIF
-            SET result = {a} / {b}
+            SET result = $a / $b
         CASE _
             RAISE "Action không hợp lệ"
     ENDMATCH
 
-    PRINT "Kết quả: {result}"
+    PRINT "Kết quả: $result"
 EXCEPT as e
-    PRINT "Lỗi: {e}"
+    PRINT "Lỗi: $e"
 ENDTRY
 PRINT " Test xong RAISE nâng cao"
-
 TRY
     PRINT "1"
     RAISE "boom"
@@ -176,12 +173,12 @@ PRINT "4 - tiếp tục"
 PRINT "Test xong TRY / EXCEPTION / RAISE "
 
 SET loop_index = 5
-LOOP {loop_index}
+LOOP $loop_index
     TRY
-        IF {loop_index} == 3
+        IF $loop_index == 3
             RAISE "skip vòng này"
         ENDIF
-        PRINT "Xử lý {loop_index}"
+        PRINT "Xử lý $loop_index"
     EXCEPT
         CONTINUE
     ENDTRY
@@ -189,7 +186,7 @@ ENDLOOP
 PRINT "Test xong RAISE"
 
 SET role = "guest"
-MATCH {role}
+MATCH $role
     CASE "user"
         PRINT "User thường"
     CASE "admin"
@@ -202,25 +199,25 @@ ENDMATCH
 PRINT "TEST XONG MATCH/CASE"
 
 FUNCTION chao(ten, tuoi)
-    PRINT "Xin chào {ten}, {tuoi} tuổi!"
+    PRINT "Xin chào $ten, $tuoi tuổi!"
 ENDFUNCTION
 
 FUNCTION cong(a, b)
-    SET c = {a} + {b}
-    RETURN {c}
+    SET c = $a + $b
+    RETURN $c
 ENDFUNCTION
 
 CALL chao("An", 25)
 CALL cong(10, 20) -> ketqua
-PRINT "Kết quả: {ketqua}"
+PRINT "Kết quả: $ketqua"
 PRINT "Test xong FUNCTION có tham số "
 
 SET x = 2
 TRY
-    ASSERT {x} >= 5, "Giá trị x không hợp lệ"
+    ASSERT $x >= 5, "Giá trị x không hợp lệ"
     PRINT "Không lỗi"
 EXCEPT AssertionFailedError as err
-    PRINT "Bắt lỗi: {err}"
+    PRINT "Bắt lỗi: $err"
 FINALLY
     PRINT "Luôn chạy FINALLY"
 ENDTRY
@@ -228,14 +225,40 @@ PRINT "Test xong FINALLY"
 
 PRINT "=== Test DEL ==="
 SET temp = "giá trị tạm"
-PRINT "Trước DEL: temp = {temp}"
+PRINT "Trước DEL: temp = $temp"
 DEL temp
-PRINT "Sau DEL: temp = {temp}"  
+PRINT "Sau DEL: temp = $temp"  
 PRINT " Test xong DEL"
 
 PRINT "=== Test PASS trong IF ==="
 SET mode = "test"
-IF {mode} == "test"
+IF $mode == "test"
+    PASS
+    PRINT "Nếu PASS hoạt động, dòng này vẫn in"
+ELSE
+    PRINT "Không chạy vào đây"
+ENDIF
+PRINT "Test xong PASS"SET x = 2
+TRY
+    ASSERT $x >= 5, "Giá trị x không hợp lệ"
+    PRINT "Không lỗi"
+EXCEPT AssertionFailedError as err
+    PRINT "Bắt lỗi: $err"
+FINALLY
+    PRINT "Luôn chạy FINALLY"
+ENDTRY
+PRINT "Test xong FINALLY"
+
+PRINT "=== Test DEL ==="
+SET temp = "giá trị tạm"
+PRINT "Trước DEL: temp = $temp"
+DEL temp
+PRINT "Sau DEL: temp = $temp"  
+PRINT " Test xong DEL"
+
+PRINT "=== Test PASS trong IF ==="
+SET mode = "test"
+IF $mode == "test"
     PASS
     PRINT "Nếu PASS hoạt động, dòng này vẫn in"
 ELSE
@@ -253,49 +276,48 @@ ENDIF
 PRINT "Test xong SILENT"
 
 SET my_list = [10, 20, 30, 40, 50]
+PRINT ${my_list[0]}       
+PRINT ${my_list[-1]}      
+PRINT ${my_list[1:4]}     
+PRINT ${my_list[::2]}     
 
-PRINT my_list[0]       
-PRINT my_list[-1]      
-PRINT my_list[1:4]     
-PRINT my_list[::2]     
+PRINT ${[10,20,30,40,50][0]}     
+PRINT ${"hello"[1:3]}              
 
-PRINT [10,20,30,40,50][0]     
-PRINT "hello"[1:3]              
 SET x = 5
-PRINT x * 3     
+PRINT ${x * 3}     
 
 SET my_list2 = ["một", "hai", "ba", "bốn", "năm"]
 
-PRINT my_list2[0]       
-PRINT my_list2[-1]      
-PRINT my_list2[1:4]     
-PRINT my_list2[::2]     
+PRINT ${my_list2[0]}       
+PRINT ${my_list2[-1]}      
+PRINT ${my_list2[1:4]}     
+PRINT ${my_list2[::2]}     
 
-PRINT "Phần tử đầu: " + my_list2[0]
+PRINT ${"Phần tử đầu: " + my_list2[0]}
 
 SET a = "hello"
-PRINT a[1:3]           
+PRINT ${a[1:3]}           
 
 SET b = {"x": 10, "y": 20}
 
-PRINT b["x"]   
-PRINT b["y"]    
+PRINT ${b["x"]}   
+PRINT ${b["y"]}    
 
 SET users = [{"name":"A"},{"name":"B"}]
 
 FOREACH u IN users
-    PRINT u["name"]
+    PRINT ${u["name"]}
 ENDFOREACH
 
-PRINT Test xong slicing   
-
+PRINT "Test xong slicing"
 SET a, b, c = [1, 2, 3]
-PRINT "a={a}, b={b}, c={c}"
+PRINT "a=$a, b=$b, c=$c"
 SET x, *mid, y = [10, 20, 30, 40, 50]
-PRINT "x={x}, mid={mid}, y={y}"
+PRINT "x=$x,  mid=$mid,  y=$y"
 
 FUNCTION demo_pack(a, b, c)
-    PRINT "a={a}, b={b}, c={c}"
+    PRINT "a=$a, b=$b, c=$c"
 ENDFUNCTION
 
 SET arr = [1, 2, 3]
@@ -303,14 +325,14 @@ SET arr = [1, 2, 3]
 SET data = [(1,2), (3,4), (5,6)]
 
 FOREACH a, b IN data
-    PRINT "{a} + {b} = {a + b}"
+    PRINT "$a + $b = ${a + b}"
 ENDFOREACH
 CALL demo_pack(*arr)
 
 SET data = [(1,2,3,4), (5,6,7,8)]
 
 FOREACH a, *mid, z IN data
-    PRINT "a={a}, mid={mid}, z={z}"
+    PRINT "a=$a, mid=$mid, z=$z"
 ENDFOREACH
 
 FUNCTION get_values()
@@ -318,10 +340,10 @@ FUNCTION get_values()
 ENDFUNCTION
 
 CALL get_values() -> result
-PRINT "result={result}"
+PRINT "result=$result"
 
 SET a, b, c = result
-PRINT "a={a}, b={b}, c={c}"
+PRINT "a=$a, b=$b, c=$c"
 
 FUNCTION sum3(a, b, c)
     RETURN a + b + c
@@ -330,11 +352,9 @@ ENDFUNCTION
 SET values = [5, 10, 15]
 
 CALL sum3(*values) -> total
-PRINT "total={total}"
+PRINT "total=$total"
 PRINT "Test xong packing / unpacking"
-                          
-
-SET value = 42
+                          SET value = 42
 IF value > 10 AND TRUE
     PRINT "✅ TRUE được dùng, điều kiện đúng"
 ELSE
@@ -379,14 +399,14 @@ ENDIF
 PRINT "Test xong TRUE/ FALSE PHỨC TẠP "
 
 FUNCTION greet(name, msg="Hello")
-    PRINT "{msg}, {name}"
+    PRINT "$msg, $name"
 ENDFUNCTION
 
 CALL greet("An")       
 CALL greet("An", "Hi")
 
 FUNCTION add_cong(a,  b=5)
-PRINT {a + b}
+PRINT ${a + b}
 DEL a
 DEL b
 ENDFUNCTION 
@@ -408,10 +428,10 @@ FUNCTION compute(x, y)
 ENDFUNCTION
 
 CALL compute(3, 4) -> final
-PRINT final
+PRINT $final
 
 FUNCTION say_hello(name)
-    PRINT "Xin chào {name}"
+    PRINT "Xin chào $name"
 ENDFUNCTION
 
 FUNCTION greet_user(name)
@@ -419,6 +439,7 @@ FUNCTION greet_user(name)
     PRINT "Chúc bạn một ngày tốt lành!"
 ENDFUNCTION
 CALL greet_user("An")
+
 FUNCTION square(x)
     RETURN x * x
 ENDFUNCTION
@@ -435,10 +456,9 @@ FUNCTION process(x)
 ENDFUNCTION
 
 CALL process(2) -> result
-PRINT result
+PRINT $result
 
 PRINT "Test xong Hàm gọi Hàm"
-
 
 FUNCTION add(a, b)
     RETURN a + b
@@ -456,30 +476,31 @@ FUNCTION combo(a, b)
     RETURN add(square(a), mul(b, 3))
 ENDFUNCTION
 
-PRINT combo(3,4) 
-PRINT mul(add(2, 3), 4)
+CALL combo(3,4) -> cb
+PRINT $cb
+CALL mul(add(2, 3), 4) -> mu
+PRINT $mu
 
 SET result = add(square(2), mul(add(1,1), 3))
-PRINT result 
+PRINT $result 
 
-PRINT "Test xong GỌI HÀM TRONG BIỂU THỨC"
+PRINT "Test xong GỌI HÀM TRONG BIỂU THỨC - NESTED FUNCTION - f(g(x))"
 
 CALL list_file() -> lf
-PRINT "{lf}"
+PRINT $lf
 DEL lf
 SET lf = list_file()
-PRINT "{lf}"
+PRINT $lf
 PRINT "Test xong IMPORT function_macro"
 
-FUNCTION excel_create4(name)
-    PYTHON __import__("os").path.exists("{name}.xlsx") -> exists
-    ASSERT {exists} == FALSE, "File đã tồn tại"
-    excel -f {name}.xlsx create
-ENDFUNCTION
-CALL excel_create4(nhom_kinh)
-PRINT "Test xong ASSERT"
-SET x = 3
-ASSERT {x} > 5, "x phải lớn hơn 5"
-PRINT "❌ Nếu thấy dòng này thì ASSERT không hoạt động đúng"
-ASSERT {x} > 10, "x không lớn hơn 10"
-PRINT "Test xong ASSERT"
+SET a = "hello"
+PRINT ${a.upper()}
+PRINT ${a.capitalize()}
+
+SET arr = [1,2,3]
+PRINT ${arr.count(2)}
+
+SET b = {"x": 10, "y": 20}
+
+PRINT ${b.get("x")}
+PRINT "Test xong DOT OPERATOR"
