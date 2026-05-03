@@ -1,4 +1,4 @@
-# đã thêm cú pháp packing, unpacking 
+# sử dụng $ thay cho {var} cũ
 import ast
 import textwrap
 import os
@@ -66,7 +66,7 @@ class MacroRecorder:
 recorder = MacroRecorder()
 
 # ==============================
-# 3. Các lớp tiện ích (DRY)
+# 3. Các lớp tiện ích (DRY) - ĐÃ SỬA để hỗ trợ cú pháp $variable và ${expression}
 # ==============================
 class StringUtils:
     @staticmethod
@@ -78,10 +78,37 @@ class StringUtils:
 
 class VariableResolver:
     @staticmethod
-    def resolve(text: str, variables: Dict[str, Any]) -> str:
-        for key, val in variables.items():
-            text = text.replace(f'{{{key}}}', str(val))
+    def substitute(text: str, variables: Dict[str, Any], ctx: Optional['MacroContext'] = None) -> str:
+        """
+        Thay thế tất cả các cú pháp:
+        - $var_name       -> giá trị của biến (chuỗi)
+        - ${expression}   -> kết quả của biểu thức (được evaluate)
+        """
+        def repl_braced(match):
+            expr = match.group(1)
+            try:
+                val = VariableResolver.evaluate_arithmetic(expr, variables, ctx=ctx)
+                return str(val)
+            except Exception:
+                return f'${{{expr}}}'
+        def repl_dollar(match):
+            name = match.group(1)
+            if name in variables:
+                return str(variables[name])
+            return f'${name}'
+        # Thay thế ${...} trước
+        text = re.sub(r'\$\{([^{}]+)\}', repl_braced, text)
+        # Thay thế $identifier (không phải là một phần của ${...})
+        text = re.sub(r'(?<!\$)\$([a-zA-Z_][a-zA-Z0-9_]*)', repl_dollar, text)
         return text
+
+    @staticmethod
+    def resolve(text: str, variables: Dict[str, Any]) -> str:
+        """Giữ nguyên tên nhưng chỉ xử lý $variable (không có ctx, không xử lý ${})"""
+        def repl(match):
+            name = match.group(1)
+            return str(variables.get(name, f'${name}'))
+        return re.sub(r'\$([a-zA-Z_][a-zA-Z0-9_]*)', repl, text)
 
     @staticmethod
     def resolve_stripped(text: str, variables: Dict[str, Any]) -> str:
@@ -89,38 +116,94 @@ class VariableResolver:
         return StringUtils.strip_quotes(resolved)
 
     @staticmethod
-    def evaluate_arithmetic(expr: str, variables: Dict[str, Any]):
-        # Thay thế {biến} bằng giá trị
-        expr = VariableResolver.resolve(expr, variables).strip()
+    def evaluate_arithmetic(expr: str, variables: Dict[str, Any], ctx: Optional['MacroContext'] = None) -> Any:
+        # Thay thế các cú pháp $ và ${}
+        expr = VariableResolver.substitute(expr, variables, ctx=ctx).strip()
     
         # Nếu là literal string (đặt trong "..." hoặc '...'), trả về chuỗi đã bỏ ngoặc
         if (expr.startswith('"') and expr.endswith('"')) or (expr.startswith("'") and expr.endswith("'")):
             return expr[1:-1]
     
-        # Còn lại: đánh giá như biểu thức Python (hỗ trợ indexing, slicing, toán tử,...)
+        # Tạo namespace cho eval
+        namespace = {**variables}
+    
+        if ctx:
+            # Tạo wrapper cho từng hàm macro
+            def make_wrapper(func_name, func_info):
+                # Xử lý cả hai định dạng cũ (params, body) và mới (params, defaults, body)
+                if len(func_info) == 3:
+                    params, defaults, body = func_info
+                else:
+                    params, body = func_info
+                    defaults = {}
+    
+                def wrapper(*args, **kwargs):
+                    # Tạo subcontext riêng
+                    sub_ctx = MacroContext(ctx.assistant, ctx.delay, ctx.auto_input.original_input)
+                    sub_ctx.variables = ctx.variables.copy()
+                    sub_ctx.functions = ctx.functions
+                    sub_ctx.python_namespace = ctx.python_namespace
+                    sub_ctx.auto_input = ctx.auto_input
+    
+                    # Gán đối số
+                    arg_map = {}
+                    # positional
+                    for i, arg in enumerate(args):
+                        if i >= len(params):
+                            raise TypeError(f"{func_name} takes at most {len(params)} positional arguments")
+                        arg_map[params[i]] = arg
+                    # keyword
+                    for k, v in kwargs.items():
+                        if k not in params:
+                            raise TypeError(f"{func_name} got unexpected keyword argument '{k}'")
+                        if k in arg_map:
+                            raise TypeError(f"{func_name} got multiple values for argument '{k}'")
+                        arg_map[k] = v
+                    # các tham số còn thiếu -> dùng default hoặc báo lỗi
+                    for param in params:
+                        if param not in arg_map:
+                            if param in defaults:
+                                default_val = VariableResolver.evaluate_arithmetic(defaults[param], sub_ctx.variables, ctx=sub_ctx)
+                                arg_map[param] = default_val
+                            else:
+                                raise TypeError(f"{func_name} missing required argument '{param}'")
+                    # Gán vào biến của subcontext
+                    for param, val in arg_map.items():
+                        sub_ctx.variables[param] = val
+    
+                    ret = body.execute(sub_ctx)
+                    return ret
+                return wrapper
+    
+            for fname, finfo in ctx.functions.items():
+                namespace[fname] = make_wrapper(fname, finfo)
+    
+        # Thêm các built‑ins cần thiết
+        namespace.update({
+            'abs': abs, 'round': round, 'len': len,
+            'str': str, 'int': int, 'float': float,
+            'list': list, 'dict': dict, 'set': set, 'tuple': tuple,
+            'True': True, 'False': False, 'None': None
+        })
+    
         try:
-            # Cho phép dùng các biến, hàm built-in cơ bản
-            namespace = {**variables,
-                         'abs': abs, 'round': round, 'len': len,
-                         'str': str, 'int': int, 'float': float,
-                         'list': list, 'dict': dict, 'set': set, 'tuple': tuple}
             result = eval(expr, {"__builtins__": {}}, namespace)
             return result
         except Exception:
-            # Nếu eval lỗi, trả về chuỗi gốc (fallback)
+            # Fallback: trả về chuỗi gốc
             return expr
 
 
 class ConditionEvaluator:
     @staticmethod
-    def evaluate(condition: str, variables: Dict[str, Any]) -> bool:
-        cond = VariableResolver.resolve(condition, variables).strip()
+    def evaluate(condition: str, variables: Dict[str, Any], ctx: Optional['MacroContext'] = None) -> bool:
+        cond = VariableResolver.substitute(condition, variables, ctx=ctx).strip()
         cond = re.sub(r'\bTRUE\b', '##TRUE##', cond, flags=re.IGNORECASE)
         cond = re.sub(r'\bFALSE\b', '##FALSE##', cond, flags=re.IGNORECASE)
-        return ConditionEvaluator._evaluate_logic(cond, variables)
+        return ConditionEvaluator._evaluate_logic(cond, variables, ctx)
 
     @staticmethod
-    def _evaluate_logic(expr: str, variables: Dict[str, Any]) -> bool:
+    def _evaluate_logic(expr: str, variables: Dict[str, Any], ctx: Optional['MacroContext'] = None) -> bool:
         expr = expr.strip()
         if not expr:
             return False
@@ -132,24 +215,24 @@ class ConditionEvaluator:
         if or_pos != -1:
             left = expr[:or_pos].strip()
             right = expr[or_pos + 4:].strip()
-            return (ConditionEvaluator._evaluate_logic(left, variables) or
-                    ConditionEvaluator._evaluate_logic(right, variables))
+            return (ConditionEvaluator._evaluate_logic(left, variables, ctx) or
+                    ConditionEvaluator._evaluate_logic(right, variables, ctx))
 
         and_pos = ConditionEvaluator._find_operator_outside_parens(expr, ' AND ')
         if and_pos != -1:
             left = expr[:and_pos].strip()
             right = expr[and_pos + 5:].strip()
-            return (ConditionEvaluator._evaluate_logic(left, variables) and
-                    ConditionEvaluator._evaluate_logic(right, variables))
+            return (ConditionEvaluator._evaluate_logic(left, variables, ctx) and
+                    ConditionEvaluator._evaluate_logic(right, variables, ctx))
 
         if expr.startswith('NOT '):
             sub = expr[4:].strip()
-            return not ConditionEvaluator._evaluate_logic(sub, variables)
+            return not ConditionEvaluator._evaluate_logic(sub, variables, ctx)
 
         if expr.startswith('(') and expr.endswith(')'):
-            return ConditionEvaluator._evaluate_logic(expr[1:-1], variables)
+            return ConditionEvaluator._evaluate_logic(expr[1:-1], variables, ctx)
 
-        return ConditionEvaluator._evaluate_comparison(expr, variables)
+        return ConditionEvaluator._evaluate_comparison(expr, variables, ctx)
 
     @staticmethod
     def _find_operator_outside_parens(expr: str, op: str) -> int:
@@ -167,14 +250,14 @@ class ConditionEvaluator:
         return -1
 
     @staticmethod
-    def _evaluate_comparison(cond: str, variables: Dict[str, Any]) -> bool:
+    def _evaluate_comparison(cond: str, variables: Dict[str, Any], ctx: Optional['MacroContext'] = None) -> bool:
         cond = cond.replace('##TRUE##', 'True').replace('##FALSE##', 'False')
         
         for op in ['IS NOT', 'NOT IN']:
             if op in cond:
                 left, right = cond.split(op, 1)
-                left_val = ConditionEvaluator._cast_value(left.strip(), variables)
-                right_val = ConditionEvaluator._cast_value(right.strip(), variables)
+                left_val = ConditionEvaluator._cast_value(left.strip(), variables, ctx)
+                right_val = ConditionEvaluator._cast_value(right.strip(), variables, ctx)
                 if op == 'IS NOT':
                     return left_val is not right_val
                 elif op == 'NOT IN':
@@ -183,8 +266,8 @@ class ConditionEvaluator:
         for op in ['IS', 'IN']:
             if op in cond:
                 left, right = cond.split(op, 1)
-                left_val = ConditionEvaluator._cast_value(left.strip(), variables)
-                right_val = ConditionEvaluator._cast_value(right.strip(), variables)
+                left_val = ConditionEvaluator._cast_value(left.strip(), variables, ctx)
+                right_val = ConditionEvaluator._cast_value(right.strip(), variables, ctx)
                 if op == 'IS':
                     return left_val is right_val
                 elif op == 'IN':
@@ -193,8 +276,8 @@ class ConditionEvaluator:
         for op in ['==', '!=', '>=', '<=', '>', '<']:
             if op in cond:
                 left, right = cond.split(op, 1)
-                left_val = ConditionEvaluator._cast_value(left.strip(), variables)
-                right_val = ConditionEvaluator._cast_value(right.strip(), variables)
+                left_val = ConditionEvaluator._cast_value(left.strip(), variables, ctx)
+                right_val = ConditionEvaluator._cast_value(right.strip(), variables, ctx)
                 if op == '==': return left_val == right_val
                 if op == '!=': return left_val != right_val
                 if op == '>': return left_val > right_val
@@ -202,7 +285,7 @@ class ConditionEvaluator:
                 if op == '>=': return left_val >= right_val
                 if op == '<=': return left_val <= right_val
         
-        val = ConditionEvaluator._cast_value(cond, variables)
+        val = ConditionEvaluator._cast_value(cond, variables, ctx)
         return bool(val)
 
     @staticmethod
@@ -216,8 +299,8 @@ class ConditionEvaluator:
             return False
 
     @staticmethod
-    def _cast_value(val: str, variables: Dict[str, Any]):
-        val = VariableResolver.evaluate_arithmetic(val, variables)
+    def _cast_value(val: str, variables: Dict[str, Any], ctx: Optional['MacroContext'] = None):
+        val = VariableResolver.evaluate_arithmetic(val, variables, ctx=ctx)
         if isinstance(val, (int, float, bool)):
             return val
         val = StringUtils.strip_quotes(str(val))
@@ -257,7 +340,7 @@ class AutoInputHelper:
         return self.original_input(prompt)
 
 # ==============================
-# 4. Command Pattern (bổ sung các lệnh mới)
+# 4. Command Pattern (các lệnh đã được sửa để truyền ctx và dùng cú pháp $)
 # ==============================
 class MacroContext:
     def __init__(self, assistant, delay: float, original_input: Callable):
@@ -265,7 +348,7 @@ class MacroContext:
         self.delay = delay
         self.variables: Dict[str, Any] = {}
         self.auto_input = AutoInputHelper(original_input)
-        self.functions: Dict[str, 'BlockCommand'] = {}
+        self.functions: Dict[str, Tuple[List[str], Dict[str, str], 'BlockCommand']] = {}
         self.python_namespace = {}
 
 class MacroCommand(ABC):
@@ -288,18 +371,16 @@ class BlockCommand(MacroCommand):
 # ---------- Các lệnh đơn dòng ----------
 class SetCommand(MacroCommand):
     def __init__(self, targets: List[str], value_expr: str):
-        # targets: ['a', 'b', '*rest']  hoặc ['x']
         self.targets = targets
         self.value_expr = value_expr
 
     def execute(self, ctx: MacroContext) -> Optional[Any]:
-        value = VariableResolver.evaluate_arithmetic(self.value_expr, ctx.variables)
+        value = VariableResolver.evaluate_arithmetic(self.value_expr, ctx.variables, ctx=ctx)
 
         if len(self.targets) == 1 and not self.targets[0].startswith('*'):
             ctx.variables[self.targets[0]] = value
             return None
 
-        # Unpack gán
         if not isinstance(value, (list, tuple)):
             print(f'❌ SET: vế phải {value} không phải list/tuple để unpack')
             return None
@@ -346,28 +427,10 @@ class PrintCommand(MacroCommand):
 
     def execute(self, ctx: MacroContext) -> Optional[Any]:
         msg = self.message.strip()
-
-        # 👉 Nếu có { } → xử lý template
-        if '{' in msg and '}' in msg:
-            def repl(match):
-                expr = match.group(1)
-                try:
-                    return str(VariableResolver.evaluate_arithmetic(expr, ctx.variables))
-                except Exception:
-                    return '{' + expr + '}'
-
-            msg = re.sub(r'\{([^{}]+)\}', repl, msg)
-            msg = StringUtils.strip_quotes(msg)
-            print(f'📢 {msg}')
-            return None
-
-        # 👉 Không có {} → eval như expression
-        try:
-            result = VariableResolver.evaluate_arithmetic(msg, ctx.variables)
-        except Exception:
-            result = msg
-
-        print(f'📢 {result}')
+        # Dùng substitute để thay thế tất cả $var và ${expr}
+        msg = VariableResolver.substitute(msg, ctx.variables, ctx=ctx)
+        msg = StringUtils.strip_quotes(msg)
+        print(f'📢 {msg}')
         return None
 
 class QuestionCommand(MacroCommand):
@@ -376,9 +439,10 @@ class QuestionCommand(MacroCommand):
         self.auto_answer = auto_answer
 
     def execute(self, ctx: MacroContext) -> Optional[Any]:
-        q = VariableResolver.resolve(self.question, ctx.variables)
+        q = VariableResolver.substitute(self.question, ctx.variables, ctx=ctx)
         if self.auto_answer is not None:
-            ans = VariableResolver.resolve_stripped(self.auto_answer, ctx.variables)
+            ans = VariableResolver.substitute(self.auto_answer, ctx.variables, ctx=ctx)
+            ans = StringUtils.strip_quotes(ans)
             print(f'🤖 (tự động) {q}\n👉 {ans}')
             user_input = ans
         else:
@@ -392,7 +456,7 @@ class ReturnCommand(MacroCommand):
         self.exprs = exprs
 
     def execute(self, ctx: MacroContext) -> Optional[Any]:
-        values = [VariableResolver.evaluate_arithmetic(e, ctx.variables) for e in self.exprs]
+        values = [VariableResolver.evaluate_arithmetic(e, ctx.variables, ctx=ctx) for e in self.exprs]
         if len(values) == 1:
             return values[0]
         return tuple(values)
@@ -448,7 +512,7 @@ class RegularCommand(MacroCommand):
         self.silent = silent
 
     def execute(self, ctx):
-        cmd = VariableResolver.resolve(self.command_text, ctx.variables)
+        cmd = VariableResolver.substitute(self.command_text, ctx.variables, ctx=ctx)
         if not self.silent:
             print(f'⏩ {cmd}')
         result = ctx.assistant.process_command(cmd)
@@ -462,7 +526,7 @@ class PythonCommand(MacroCommand):
         self.store_var = store_var
 
     def execute(self, ctx: MacroContext) -> Optional[Any]:
-        resolved = VariableResolver.resolve(self.code, ctx.variables)
+        resolved = VariableResolver.substitute(self.code, ctx.variables, ctx=ctx)
         namespace = ctx.python_namespace
         if '__builtins__' not in namespace:
             namespace['__builtins__'] = __builtins__
@@ -503,7 +567,7 @@ class PythonBlockCommand(MacroCommand):
                 print(f"⚠️ Biến '{self.store_var}' không tồn tại sau khi chạy PYBLOCK")
         return None
 
-# ---------- Lệnh cấu trúc (có bổ sung) ----------
+# ---------- Lệnh cấu trúc ----------
 class IfCommand(MacroCommand):
     def __init__(self, conditions_blocks: List[Tuple[str, BlockCommand]], else_block: Optional[BlockCommand] = None):
         self.conditions_blocks = conditions_blocks
@@ -511,7 +575,7 @@ class IfCommand(MacroCommand):
 
     def execute(self, ctx: MacroContext) -> Optional[Any]:
         for condition, block in self.conditions_blocks:
-            if ConditionEvaluator.evaluate(condition, ctx.variables):
+            if ConditionEvaluator.evaluate(condition, ctx.variables, ctx=ctx):
                 return block.execute(ctx)
         if self.else_block:
             return self.else_block.execute(ctx)
@@ -523,7 +587,7 @@ class LoopCommand(MacroCommand):
         self.body = body
 
     def execute(self, ctx: MacroContext) -> Optional[Any]:
-        count_str = VariableResolver.evaluate_arithmetic(self.count_expr, ctx.variables)
+        count_str = VariableResolver.evaluate_arithmetic(self.count_expr, ctx.variables, ctx=ctx)
         try:
             count = int(float(count_str))
         except ValueError:
@@ -554,7 +618,7 @@ class ForeachCommand(MacroCommand):
         self.has_star = any(v.startswith('*') for v in vars_pattern)
 
     def execute(self, ctx: MacroContext) -> Optional[Any]:
-        items_value = VariableResolver.evaluate_arithmetic(self.list_expr, ctx.variables)
+        items_value = VariableResolver.evaluate_arithmetic(self.list_expr, ctx.variables, ctx=ctx)
 
         if isinstance(items_value, (list, tuple, set)):
             items = list(items_value)
@@ -574,7 +638,6 @@ class ForeachCommand(MacroCommand):
                     break
 
         for item in items:
-            # Xóa các biến cũ
             for var in self.vars_pattern:
                 vname = var[1:] if var.startswith('*') else var
                 if vname in ctx.variables:
@@ -616,7 +679,6 @@ class ForeachCommand(MacroCommand):
             except ContinueException:
                 continue
 
-        # Dọn dẹp biến sau vòng lặp
         for var in self.vars_pattern:
             vname = var[1:] if var.startswith('*') else var
             if vname in ctx.variables:
@@ -629,7 +691,7 @@ class WhileCommand(MacroCommand):
         self.body = body
 
     def execute(self, ctx: MacroContext) -> Optional[Any]:
-        while ConditionEvaluator.evaluate(self.condition, ctx.variables):
+        while ConditionEvaluator.evaluate(self.condition, ctx.variables, ctx=ctx):
             try:
                 ret = self.body.execute(ctx)
                 if ret is not None:
@@ -642,7 +704,6 @@ class WhileCommand(MacroCommand):
 
 class CallCommand(MacroCommand):
     def __init__(self, func_name: str, args: List[Tuple[str, str]], kwargs: Dict[str, str], store_var: Optional[str] = None):
-        # args: list of (type, expr) với type = 'pos', 'star', 'starstar'
         self.func_name = func_name
         self.args = args
         self.kwargs = kwargs
@@ -652,53 +713,70 @@ class CallCommand(MacroCommand):
         if self.func_name not in ctx.functions:
             print(f'❌ Hàm không tồn tại: {self.func_name}')
             return None
-        params, func_body = ctx.functions[self.func_name]
+        func_info = ctx.functions[self.func_name]
+        if isinstance(func_info, tuple) and len(func_info) == 3:
+            params, defaults, func_body = func_info
+        else:
+            params, func_body = func_info
+            defaults = {}
 
-        # Xây dựng danh sách đối số thực tế
         actual_args = []
         for typ, expr in self.args:
             if typ == 'pos':
-                actual_args.append(VariableResolver.evaluate_arithmetic(expr, ctx.variables))
+                actual_args.append(VariableResolver.evaluate_arithmetic(expr, ctx.variables, ctx=ctx))
             elif typ == 'star':
-                val = VariableResolver.evaluate_arithmetic(expr, ctx.variables)
+                val = VariableResolver.evaluate_arithmetic(expr, ctx.variables, ctx=ctx)
                 if isinstance(val, (list, tuple)):
                     actual_args.extend(val)
                 else:
                     print(f'⚠️ *{expr} không phải list/tuple, bỏ qua')
             elif typ == 'starstar':
-                val = VariableResolver.evaluate_arithmetic(expr, ctx.variables)
+                val = VariableResolver.evaluate_arithmetic(expr, ctx.variables, ctx=ctx)
                 if isinstance(val, dict):
-                    # Gộp các keyword từ dict
                     for k, v in val.items():
-                        self.kwargs[k] = v  # sẽ được xử lý sau
+                        self.kwargs[k] = v
                 else:
                     print(f'⚠️ **{expr} không phải dict, bỏ qua')
 
-        # Xử lý kwargs thường
         kwargs_dict = {}
         for k, expr in self.kwargs.items():
-            kwargs_dict[k] = VariableResolver.evaluate_arithmetic(expr, ctx.variables)
+            kwargs_dict[k] = VariableResolver.evaluate_arithmetic(expr, ctx.variables, ctx=ctx)
 
-        # Gộp kwargs từ ** (nếu có) đã được thêm vào self.kwargs
-        # (ta đã xử lý ** bằng cách thêm vào self.kwargs, nhưng cần tránh trùng)
-        # Đơn giản: hiện tại chưa hỗ trợ ** phức tạp, chỉ coi ** như một dict thêm vào kwargs
-        # Tuy nhiên để đúng thứ tự, ta nên xử lý ** riêng. Ở đây tạm thời bỏ qua ** trong call.
+        arg_map = {}
+        for i, arg in enumerate(actual_args):
+            if i >= len(params):
+                print(f'❌ Hàm {self.func_name} nhận quá nhiều đối số positional')
+                return None
+            param_name = params[i]
+            arg_map[param_name] = arg
 
-        # Số tham số bắt buộc (macro hiện tại chưa hỗ trợ default, kiểm tra số lượng)
-        if len(actual_args) != len(params):
-            print(f'❌ Hàm {self.func_name} cần {len(params)} tham số, nhận {len(actual_args)}')
-            return None
+        for k, v in kwargs_dict.items():
+            if k not in params:
+                print(f'❌ Hàm {self.func_name} không có tham số {k}')
+                return None
+            if k in arg_map:
+                print(f'❌ Hàm {self.func_name} nhận đối số {k} hai lần')
+                return None
+            arg_map[k] = v
+
+        for param in params:
+            if param not in arg_map:
+                if param in defaults:
+                    default_expr = defaults[param]
+                    default_val = VariableResolver.evaluate_arithmetic(default_expr, ctx.variables, ctx=ctx)
+                    arg_map[param] = default_val
+                else:
+                    print(f'❌ Hàm {self.func_name} thiếu đối số bắt buộc: {param}')
+                    return None
 
         sub_ctx = MacroContext(ctx.assistant, ctx.delay, ctx.auto_input.original_input)
         sub_ctx.variables = ctx.variables.copy()
         sub_ctx.functions = ctx.functions
         sub_ctx.python_namespace = ctx.python_namespace
+        sub_ctx.auto_input = ctx.auto_input
 
-        for param, arg_val in zip(params, actual_args):
-            sub_ctx.variables[param] = arg_val
-
-        for k, v in kwargs_dict.items():
-            sub_ctx.variables[k] = v
+        for param, val in arg_map.items():
+            sub_ctx.variables[param] = val
 
         ret = func_body.execute(sub_ctx)
 
@@ -719,7 +797,7 @@ class RaiseCommand(MacroCommand):
         self.expr = expr
 
     def execute(self, ctx: MacroContext) -> Optional[Any]:
-        resolved = VariableResolver.resolve(self.expr, ctx.variables)
+        resolved = VariableResolver.substitute(self.expr, ctx.variables, ctx=ctx)
         namespace = ctx.python_namespace
         if '__builtins__' not in namespace:
             namespace['__builtins__'] = __builtins__
@@ -744,10 +822,11 @@ class AssertCommand(MacroCommand):
         self.message = message
 
     def execute(self, ctx: MacroContext) -> Optional[Any]:
-        cond = ConditionEvaluator.evaluate(self.condition, ctx.variables)
+        cond = ConditionEvaluator.evaluate(self.condition, ctx.variables, ctx=ctx)
         if not cond:
             msg = self.message if self.message else f"ASSERT thất bại: {self.condition}"
-            msg = VariableResolver.resolve_stripped(msg, ctx.variables)
+            msg = VariableResolver.substitute(msg, ctx.variables, ctx=ctx)
+            msg = StringUtils.strip_quotes(msg)
             raise AssertionFailedError(msg)
         return None
 
@@ -802,11 +881,11 @@ class MatchCommand(MacroCommand):
         self.default_block = default_block
 
     def execute(self, ctx: MacroContext) -> Optional[Any]:
-        value = VariableResolver.evaluate_arithmetic(self.value_expr, ctx.variables)
+        value = VariableResolver.evaluate_arithmetic(self.value_expr, ctx.variables, ctx=ctx)
         for pattern, block in self.cases:
             if pattern == '_':
                 return block.execute(ctx)
-            pat_val = VariableResolver.evaluate_arithmetic(pattern, ctx.variables)
+            pat_val = VariableResolver.evaluate_arithmetic(pattern, ctx.variables, ctx=ctx)
             if value == pat_val:
                 return block.execute(ctx)
         if self.default_block:
@@ -820,7 +899,7 @@ class WithCommand(MacroCommand):
         self.body = body
 
     def execute(self, ctx: MacroContext) -> Optional[Any]:
-        resolved = VariableResolver.resolve(self.context_expr, ctx.variables)
+        resolved = VariableResolver.substitute(self.context_expr, ctx.variables, ctx=ctx)
         namespace = ctx.python_namespace
         if '__builtins__' not in namespace:
             namespace['__builtins__'] = __builtins__
@@ -857,7 +936,7 @@ class WithCommand(MacroCommand):
         return ret
 
 # ==============================
-# 5. Command Registry (OCP)
+# 5. Command Registry (giữ nguyên)
 # ==============================
 class CommandRegistry:
     _parsers: List[Callable] = []
@@ -879,12 +958,11 @@ class CommandRegistry:
         return None, pos + 1
 
 # ==============================
-# 6. Macro Parser (có DRY)
+# 6. Macro Parser (giữ nguyên)
 # ==============================
 class MacroParser:
     @staticmethod
     def split_args(s: str) -> List[str]:
-        """Tách các đối số phân cách bởi dấu phẩy, nhưng không tách trong ngoặc."""
         parts = []
         current = []
         depth = 0
@@ -906,10 +984,6 @@ class MacroParser:
     def find_block_end(lines: List[str], start: int, end: int,
                        start_prefix: str, end_keyword: str,
                        find_else: bool = False, find_elif: bool = False, find_finally: bool = False) -> Tuple[int, List[Tuple[str, int]]]:
-        """
-        Tìm vị trí kết thúc của block và danh sách các vị trí đặc biệt (ELIF, ELSE, FINALLY).
-        Trả về (vị trí end, danh sách (type, line_number)).
-        """
         nested = 1
         j = start + 1
         extra_positions = []
@@ -932,7 +1006,7 @@ class MacroParser:
         return j, extra_positions
 
     @staticmethod
-    def parse(lines: List[str]) -> Tuple[BlockCommand, Dict[str, Tuple[List[str], BlockCommand]]]:
+    def parse(lines: List[str]) -> Tuple[BlockCommand, Dict[str, Tuple[List[str], Dict[str, str], BlockCommand]]]:
         raw = [line.rstrip('\n') for line in lines]
         functions = {}
         root_children, _ = MacroParser._parse_sequence(raw, 0, len(raw), functions)
@@ -954,13 +1028,25 @@ class MacroParser:
                 if match:
                     func_name = match.group(1)
                     params_str = match.group(2)
-                    params = [p.strip().split('=')[0].strip() for p in params_str.split(',') if p.strip()]
+                    param_parts = [p.strip() for p in params_str.split(',') if p.strip()]
+                    params = []
+                    defaults = {}
+                    for p in param_parts:
+                        if '=' in p:
+                            name, default_expr = p.split('=', 1)
+                            name = name.strip()
+                            default_expr = default_expr.strip()
+                            params.append(name)
+                            defaults[name] = default_expr
+                        else:
+                            params.append(p)
                 else:
                     func_name = rest
                     params = []
+                    defaults = {}
                 j, _ = MacroParser.find_block_end(lines, i, end, 'FUNCTION ', 'ENDFUNCTION')
                 body_children, _ = MacroParser._parse_sequence(lines, i+1, j, functions)
-                functions[func_name] = (params, BlockCommand(body_children))
+                functions[func_name] = (params, defaults, BlockCommand(body_children))
                 i = j + 1
                 continue
             if line == 'ENDFUNCTION':
@@ -973,7 +1059,7 @@ class MacroParser:
         return children, i
 
 # ==============================
-# 7. Đăng ký các parser (có bổ sung)
+# 7. Đăng ký các parser (giữ nguyên)
 # ==============================
 @CommandRegistry.register
 def parse_if(lines, pos, end, functions):
@@ -1224,7 +1310,6 @@ def parse_try(lines, pos, end, functions):
     j, extra = MacroParser.find_block_end(lines, pos, end, 'TRY', 'ENDTRY', find_finally=True)
     catches = []
     finally_block = None
-    # Xây dựng blocks_info
     blocks_info = []
     i = pos + 1
     while i < j:
@@ -1401,7 +1486,7 @@ def parse_regular(lines, pos, end, functions):
     return RegularCommand(line), pos+1
 
 # ==============================
-# 8. Macro Executor
+# 8. Macro Executor (giữ nguyên)
 # ==============================
 class MacroExecutor:
     def __init__(self, ctx: MacroContext):
@@ -1421,7 +1506,7 @@ class MacroExecutor:
             recorder_is_playing = False
 
 # ==============================
-# 9. MacroCommandHandler
+# 9. MacroCommandHandler (giữ nguyên)
 # ==============================
 class MacroCommandHandler:
     def __init__(self, assistant):
@@ -1489,5 +1574,5 @@ plugin_info = {
     'register': lambda assistant: assistant.handlers.append(MacroCommandHandler(assistant)),
     'methods': [],
     'classes': [MacroRecorder, MacroCommandHandler],
-    'description': 'Ghi và chạy macro với IF/ELIF/ELSE, LOOP, FOREACH (hỗ trợ unpack), WHILE, FUNCTION/CALL (hỗ trợ *args, **kwargs), INPUT, SET (hỗ trợ unpack gán), ?, PRINT, IMPORT, FROM IMPORT, PYTHON, BREAK, CONTINUE, TRY/FINALLY/EXCEPT, MATCH/CASE, WITH, ASSERT, DEL, PASS, RAISE, RETURN nhiều giá trị'
+    'description': 'Ghi và chạy macro với IF/ELIF/ELSE, LOOP, FOREACH (hỗ trợ unpack), WHILE, FUNCTION/CALL (hỗ trợ *args, **kwargs và tham số mặc định), INPUT, SET (hỗ trợ unpack gán), ?, PRINT, IMPORT, FROM IMPORT, PYTHON, BREAK, CONTINUE, TRY/FINALLY/EXCEPT, MATCH/CASE, WITH, ASSERT, DEL, PASS, RAISE, RETURN nhiều giá trị - ĐÃ CHUYỂN SANG CÚ PHÁP BIẾN $ (ví dụ $ten, ${biểu thức}) thay vì {}'
 }
