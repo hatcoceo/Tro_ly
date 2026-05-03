@@ -1,9 +1,0 @@
-? Nhập mức thụt lề
-SET cap_thut_le = {answer}
-IF {answer} == ""
-hiển thị thụt lề thut_le.py 1
-phục hồi thụt lề thut_le_indent.py
-ELSE 
-hiển thị thụt lề thut_le.py {cap_thut_le}
-phục hồi thụt lề thut_le_indent.py
-ENDIF 
