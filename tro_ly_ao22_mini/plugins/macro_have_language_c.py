@@ -1649,6 +1649,7 @@ plugin_info = {
 }
 '''
 #demo sử dụng nhúng mã C file (macro_c.txt)
+# nhớ cài thư viện clang trong pydroid 
 SET x = 10
 
 CBLOCK -> output
