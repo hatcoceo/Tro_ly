@@ -1,4 +1,4 @@
-# sử dụng $ thay cho {var} cũ
+# Đã thêm enumerate vào hàm builtin
 import ast
 import textwrap
 import os
@@ -144,6 +144,7 @@ class VariableResolver:
                     sub_ctx.functions = ctx.functions
                     sub_ctx.python_namespace = ctx.python_namespace
                     sub_ctx.auto_input = ctx.auto_input
+                    sub_ctx.quiet = ctx.quiet                 # kế thừa chế độ quiet
     
                     # Gán đối số
                     arg_map = {}
@@ -182,7 +183,9 @@ class VariableResolver:
         namespace.update({
             'abs': abs, 'round': round, 'len': len,
             'str': str, 'int': int, 'float': float,
-            'list': list, 'dict': dict, 'set': set, 'tuple': tuple,
+            'list': list, 'dict': dict, 'set': set, 'tuple': tuple, 'zip': zip, 'range': range, 'map': map,
+            'min': min, 'max': max, 'sum': sum, 
+            'all': all, 'any': any, 'filter': filter, 'enumerate': enumerate,
             'True': True, 'False': False, 'None': None
         })
     
@@ -350,6 +353,7 @@ class MacroContext:
         self.auto_input = AutoInputHelper(original_input)
         self.functions: Dict[str, Tuple[List[str], Dict[str, str], 'BlockCommand']] = {}
         self.python_namespace = {}
+        self.quiet = False          # Thêm chế độ im lặng toàn cục
 
 class MacroCommand(ABC):
     @abstractmethod
@@ -426,6 +430,8 @@ class PrintCommand(MacroCommand):
         self.message = message
 
     def execute(self, ctx: MacroContext) -> Optional[Any]:
+        if ctx.quiet:
+            return None
         msg = self.message.strip()
         # Dùng substitute để thay thế tất cả $var và ${expr}
         msg = VariableResolver.substitute(msg, ctx.variables, ctx=ctx)
@@ -443,12 +449,18 @@ class QuestionCommand(MacroCommand):
         if self.auto_answer is not None:
             ans = VariableResolver.substitute(self.auto_answer, ctx.variables, ctx=ctx)
             ans = StringUtils.strip_quotes(ans)
-            print(f'🤖 (tự động) {q}\n👉 {ans}')
+            if not ctx.quiet:
+                print(f'🤖 (tự động) {q}\n👉 {ans}')
             user_input = ans
         else:
-            user_input = ctx.auto_input.get_input(f'\n🤖 {q}\n👉 ')
+            # Nếu quiet, vẫn hỏi nhưng không in prompt
+            if ctx.quiet:
+                user_input = ctx.auto_input.get_input('')
+            else:
+                user_input = ctx.auto_input.get_input(f'\n🤖 {q}\n👉 ')
         ctx.variables['answer'] = user_input
-        print()
+        if not ctx.quiet:
+            print()
         return None
 
 class ReturnCommand(MacroCommand):
@@ -497,6 +509,7 @@ class ImportCommand(MacroCommand):
         sub_ctx.functions = ctx.functions
         sub_ctx.auto_input = ctx.auto_input
         sub_ctx.python_namespace = ctx.python_namespace
+        sub_ctx.quiet = ctx.quiet
         if hasattr(ctx, 'import_stack'):
             sub_ctx.import_stack = ctx.import_stack + [self.macro_name]
         else:
@@ -513,7 +526,7 @@ class RegularCommand(MacroCommand):
 
     def execute(self, ctx):
         cmd = VariableResolver.substitute(self.command_text, ctx.variables, ctx=ctx)
-        if not self.silent:
+        if not self.silent and not ctx.quiet:
             print(f'⏩ {cmd}')
         result = ctx.assistant.process_command(cmd)
         if self.store_var:
@@ -521,9 +534,10 @@ class RegularCommand(MacroCommand):
         return None
 
 class PythonCommand(MacroCommand):
-    def __init__(self, code: str, store_var: Optional[str] = None):
+    def __init__(self, code: str, store_var: Optional[str] = None, quiet: bool = False):
         self.code = code
         self.store_var = store_var
+        self.quiet = quiet          # quiet riêng cho lệnh này
 
     def execute(self, ctx: MacroContext) -> Optional[Any]:
         resolved = VariableResolver.substitute(self.code, ctx.variables, ctx=ctx)
@@ -537,11 +551,12 @@ class PythonCommand(MacroCommand):
                 exec(resolved, namespace)
                 result = None
             except Exception as e:
-                print(f"❌ Lỗi PYTHON: {e}")
+                if not ctx.quiet:
+                    print(f"❌ Lỗi PYTHON: {e}")
                 return None
         if self.store_var is not None:
             ctx.variables[self.store_var] = result
-        elif result is not None:
+        elif result is not None and not self.quiet and not ctx.quiet:
             print(f"🐍 {result}")
         return None
 
@@ -558,13 +573,15 @@ class PythonBlockCommand(MacroCommand):
         try:
             exec(dedented_code, namespace)
         except Exception as e:
-            print(f"❌ Lỗi PYTHON BLOCK: {e}")
+            if not ctx.quiet:
+                print(f"❌ Lỗi PYTHON BLOCK: {e}")
             return None
         if self.store_var is not None:
             if self.store_var in namespace:
                 ctx.variables[self.store_var] = namespace[self.store_var]
             else:
-                print(f"⚠️ Biến '{self.store_var}' không tồn tại sau khi chạy PYBLOCK")
+                if not ctx.quiet:
+                    print(f"⚠️ Biến '{self.store_var}' không tồn tại sau khi chạy PYBLOCK")
         return None
 
 # ---------- Lệnh cấu trúc ----------
@@ -591,7 +608,8 @@ class LoopCommand(MacroCommand):
         try:
             count = int(float(count_str))
         except ValueError:
-            print(f'❌ Lỗi: Số lần lặp không hợp lệ: {count_str}')
+            if not ctx.quiet:
+                print(f'❌ Lỗi: Số lần lặp không hợp lệ: {count_str}')
             return None
         i = 0
         while i < count:
@@ -620,16 +638,35 @@ class ForeachCommand(MacroCommand):
     def execute(self, ctx: MacroContext) -> Optional[Any]:
         items_value = VariableResolver.evaluate_arithmetic(self.list_expr, ctx.variables, ctx=ctx)
 
-        if isinstance(items_value, (list, tuple, set)):
+        # ==============================
+        # Chuẩn hóa iterable
+        # ==============================
+        # Đoạn mới - hỗ trợ mọi iterable
+        if isinstance(items_value, (list, tuple, set, range)):
             items = list(items_value)
         elif isinstance(items_value, dict):
-            items = list(items_value.keys())
+            if len(self.vars_pattern) == 2:
+                items = list(items_value.items())
+            else:
+                items = list(items_value.keys())
         elif isinstance(items_value, str):
             items = list(items_value)
+        elif hasattr(items_value, '__iter__') and not isinstance(items_value, (type, type(...))):
+            # Các iterable khác như map, filter, zip, ...
+            try:
+                items = list(items_value)
+            except:
+                print(f'❌ FOREACH: không thể chuyển {type(items_value).__name__} thành list')
+                return None
+
         else:
-            print(f'❌ FOREACH: {self.list_expr} không phải iterable (nhận {type(items_value).__name__})')
+            if not ctx.quiet:
+                print(f'❌ FOREACH: {self.list_expr} không phải iterable (nhận {type(items_value).__name__})')
             return None
 
+        # ==============================
+        # Xác định vị trí *
+        # ==============================
         star_index = None
         if self.has_star:
             for i, v in enumerate(self.vars_pattern):
@@ -637,52 +674,84 @@ class ForeachCommand(MacroCommand):
                     star_index = i
                     break
 
+        # ==============================
+        # Loop
+        # ==============================
         for item in items:
-            for var in self.vars_pattern:
-                vname = var[1:] if var.startswith('*') else var
-                if vname in ctx.variables:
-                    del ctx.variables[vname]
-
-            if isinstance(item, (list, tuple)):
-                if self.has_star:
-                    before = self.vars_pattern[:star_index]
-                    after = self.vars_pattern[star_index+1:]
-                    star_var = self.vars_pattern[star_index][1:]
-                    if len(item) < len(before) + len(after):
-                        print(f'⚠️ Không đủ giá trị để unpack: cần {len(before)+len(after)} phần tử, có {len(item)}')
-                        continue
-                    for j, var in enumerate(before):
-                        ctx.variables[var] = item[j]
-                    rest_len = len(item) - len(before) - len(after)
-                    ctx.variables[star_var] = list(item[len(before):len(before)+rest_len])
-                    for j, var in enumerate(after):
-                        ctx.variables[var] = item[len(before)+rest_len + j]
-                else:
-                    if len(item) != len(self.vars_pattern):
-                        print(f'⚠️ FOREACH: số biến ({len(self.vars_pattern)}) khác số phần tử ({len(item)})')
-                        continue
-                    for var, val in zip(self.vars_pattern, item):
-                        ctx.variables[var] = val
-            else:
-                if len(self.vars_pattern) == 1:
-                    ctx.variables[self.vars_pattern[0]] = item
-                else:
-                    print(f'⚠️ FOREACH: giá trị {item} không thể unpack thành {len(self.vars_pattern)} biến')
-                    continue
-
             try:
+                # ==========================
+                # Case: item là tuple/list → unpack
+                # ==========================
+                if isinstance(item, (list, tuple)):
+
+                    if self.has_star:
+                        before = self.vars_pattern[:star_index]
+                        after = self.vars_pattern[star_index+1:]
+                        star_var = self.vars_pattern[star_index][1:]
+
+                        if len(item) < len(before) + len(after):
+                            raise ValueError(
+                                f'Không đủ giá trị để unpack: cần {len(before)+len(after)}, có {len(item)}'
+                            )
+
+                        # gán phần trước
+                        for j, var in enumerate(before):
+                            ctx.variables[var] = item[j]
+
+                        # gán phần *
+                        rest_len = len(item) - len(before) - len(after)
+                        ctx.variables[star_var] = list(
+                            item[len(before):len(before)+rest_len]
+                        )
+
+                        # gán phần sau
+                        for j, var in enumerate(after):
+                            ctx.variables[var] = item[len(before)+rest_len + j]
+
+                    else:
+                        if len(item) != len(self.vars_pattern):
+                            raise ValueError(
+                                f'Số biến ({len(self.vars_pattern)}) khác số phần tử ({len(item)})'
+                            )
+
+                        for var, val in zip(self.vars_pattern, item):
+                            ctx.variables[var] = val
+
+                # ==========================
+                # Case: item đơn
+                # ==========================
+                else:
+                    if len(self.vars_pattern) == 1:
+                        ctx.variables[self.vars_pattern[0]] = item
+                    else:
+                        raise ValueError(
+                            f'Giá trị {item} không thể unpack thành {len(self.vars_pattern)} biến'
+                        )
+
+                # ==========================
+                # chạy body
+                # ==========================
                 ret = self.body.execute(ctx)
                 if ret is not None:
                     return ret
+
             except BreakException:
                 break
             except ContinueException:
                 continue
+            except Exception as e:
+                if not ctx.quiet:
+                    print(f'⚠️ FOREACH: {e}')
+                continue
 
+        # ==============================
+        # Cleanup biến loop (optional)
+        # ==============================
         for var in self.vars_pattern:
             vname = var[1:] if var.startswith('*') else var
             if vname in ctx.variables:
                 del ctx.variables[vname]
+
         return None
 
 class WhileCommand(MacroCommand):
@@ -711,7 +780,8 @@ class CallCommand(MacroCommand):
 
     def execute(self, ctx: MacroContext) -> Optional[Any]:
         if self.func_name not in ctx.functions:
-            print(f'❌ Hàm không tồn tại: {self.func_name}')
+            if not ctx.quiet:
+                print(f'❌ Hàm không tồn tại: {self.func_name}')
             return None
         func_info = ctx.functions[self.func_name]
         if isinstance(func_info, tuple) and len(func_info) == 3:
@@ -729,14 +799,16 @@ class CallCommand(MacroCommand):
                 if isinstance(val, (list, tuple)):
                     actual_args.extend(val)
                 else:
-                    print(f'⚠️ *{expr} không phải list/tuple, bỏ qua')
+                    if not ctx.quiet:
+                        print(f'⚠️ *{expr} không phải list/tuple, bỏ qua')
             elif typ == 'starstar':
                 val = VariableResolver.evaluate_arithmetic(expr, ctx.variables, ctx=ctx)
                 if isinstance(val, dict):
                     for k, v in val.items():
                         self.kwargs[k] = v
                 else:
-                    print(f'⚠️ **{expr} không phải dict, bỏ qua')
+                    if not ctx.quiet:
+                        print(f'⚠️ **{expr} không phải dict, bỏ qua')
 
         kwargs_dict = {}
         for k, expr in self.kwargs.items():
@@ -745,17 +817,20 @@ class CallCommand(MacroCommand):
         arg_map = {}
         for i, arg in enumerate(actual_args):
             if i >= len(params):
-                print(f'❌ Hàm {self.func_name} nhận quá nhiều đối số positional')
+                if not ctx.quiet:
+                    print(f'❌ Hàm {self.func_name} nhận quá nhiều đối số positional')
                 return None
             param_name = params[i]
             arg_map[param_name] = arg
 
         for k, v in kwargs_dict.items():
             if k not in params:
-                print(f'❌ Hàm {self.func_name} không có tham số {k}')
+                if not ctx.quiet:
+                    print(f'❌ Hàm {self.func_name} không có tham số {k}')
                 return None
             if k in arg_map:
-                print(f'❌ Hàm {self.func_name} nhận đối số {k} hai lần')
+                if not ctx.quiet:
+                    print(f'❌ Hàm {self.func_name} nhận đối số {k} hai lần')
                 return None
             arg_map[k] = v
 
@@ -766,7 +841,8 @@ class CallCommand(MacroCommand):
                     default_val = VariableResolver.evaluate_arithmetic(default_expr, ctx.variables, ctx=ctx)
                     arg_map[param] = default_val
                 else:
-                    print(f'❌ Hàm {self.func_name} thiếu đối số bắt buộc: {param}')
+                    if not ctx.quiet:
+                        print(f'❌ Hàm {self.func_name} thiếu đối số bắt buộc: {param}')
                     return None
 
         sub_ctx = MacroContext(ctx.assistant, ctx.delay, ctx.auto_input.original_input)
@@ -774,6 +850,7 @@ class CallCommand(MacroCommand):
         sub_ctx.functions = ctx.functions
         sub_ctx.python_namespace = ctx.python_namespace
         sub_ctx.auto_input = ctx.auto_input
+        sub_ctx.quiet = ctx.quiet
 
         for param, val in arg_map.items():
             sub_ctx.variables[param] = val
@@ -838,11 +915,20 @@ class DelCommand(MacroCommand):
         if self.var_name in ctx.variables:
             del ctx.variables[self.var_name]
         else:
-            print(f"⚠️ Biến '{self.var_name}' không tồn tại để xóa")
+            if not ctx.quiet:
+                print(f"⚠️ Biến '{self.var_name}' không tồn tại để xóa")
         return None
 
 class PassCommand(MacroCommand):
     def execute(self, ctx: MacroContext) -> Optional[Any]:
+        return None
+
+class QuietCommand(MacroCommand):
+    def __init__(self, enable: bool):
+        self.enable = enable
+
+    def execute(self, ctx: MacroContext) -> Optional[Any]:
+        ctx.quiet = self.enable
         return None
 
 class TryCommand(MacroCommand):
@@ -906,12 +992,14 @@ class WithCommand(MacroCommand):
         try:
             obj = eval(resolved, namespace, {})
         except Exception as e:
-            print(f"❌ Lỗi WITH: không thể tạo context từ '{resolved}' - {e}")
+            if not ctx.quiet:
+                print(f"❌ Lỗi WITH: không thể tạo context từ '{resolved}' - {e}")
             return None
         try:
             enter_result = obj.__enter__()
         except AttributeError:
-            print(f"❌ Lỗi WITH: object {obj} không hỗ trợ context manager")
+            if not ctx.quiet:
+                print(f"❌ Lỗi WITH: object {obj} không hỗ trợ context manager")
             return None
         if self.as_var is not None:
             ctx.variables[self.as_var] = enter_result
@@ -1018,7 +1106,7 @@ class MacroParser:
         i = start
         while i < end:
             line = lines[i].strip()
-            if not line:
+            if not line or line.startswith('#'):   # Bỏ qua dòng trống hoặc comment
                 i += 1
                 continue
             if line.startswith('FUNCTION '):
@@ -1059,7 +1147,7 @@ class MacroParser:
         return children, i
 
 # ==============================
-# 7. Đăng ký các parser (giữ nguyên)
+# 7. Đăng ký các parser (giữ nguyên + thêm QUIET)
 # ==============================
 @CommandRegistry.register
 def parse_if(lines, pos, end, functions):
@@ -1250,12 +1338,16 @@ def parse_python(lines, pos, end, functions):
     if not line.startswith('PYTHON '):
         return None, pos
     rest = line[7:].strip()
+    quiet = False
+    if rest.startswith('QUIET '):
+        quiet = True
+        rest = rest[6:].strip()
     store_var = None
     if ' -> ' in rest:
         expr, var = rest.split(' -> ', 1)
         store_var = var.strip()
         rest = expr.strip()
-    return PythonCommand(rest, store_var), pos+1
+    return PythonCommand(rest, store_var, quiet), pos+1
 
 @CommandRegistry.register
 def parse_pyblock(lines, pos, end, functions):
@@ -1465,6 +1557,15 @@ def parse_pass(lines, pos, end, functions):
     return None, pos
 
 @CommandRegistry.register
+def parse_quiet(lines, pos, end, functions):
+    line = lines[pos].strip()
+    if line == 'QUIET ON':
+        return QuietCommand(True), pos+1
+    if line == 'QUIET OFF':
+        return QuietCommand(False), pos+1
+    return None, pos
+
+@CommandRegistry.register
 def parse_silent(lines, pos, end, functions):
     line = lines[pos].strip()
     if not line.startswith('SILENT '):
@@ -1478,7 +1579,7 @@ def parse_silent(lines, pos, end, functions):
 @CommandRegistry.register
 def parse_regular(lines, pos, end, functions):
     line = lines[pos].strip()
-    if line.startswith(('FUNCTION ', 'IF ', 'LOOP ', 'FOREACH ', 'WHILE ', 'CALL ', 'SET ', 'INPUT ', 'PRINT ', '? ', 'RETURN ', 'IMPORT ', 'FROM ', 'PYTHON ', 'PYBLOCK ', 'BREAK', 'CONTINUE', 'TRY', 'MATCH ', 'WITH ', 'RAISE ', 'ASSERT ', 'DEL ', 'PASS', 'SILENT ')):
+    if line.startswith(('FUNCTION ', 'IF ', 'LOOP ', 'FOREACH ', 'WHILE ', 'CALL ', 'SET ', 'INPUT ', 'PRINT ', '? ', 'RETURN ', 'IMPORT ', 'FROM ', 'PYTHON ', 'PYBLOCK ', 'BREAK', 'CONTINUE', 'TRY', 'MATCH ', 'WITH ', 'RAISE ', 'ASSERT ', 'DEL ', 'PASS', 'QUIET ', 'SILENT ')):
         return None, pos
     if ' -> ' in line:
         cmd, var = line.split(' -> ', 1)
@@ -1539,7 +1640,7 @@ class MacroCommandHandler:
             if not rest:
                 print('❌ Thiếu tên macro.')
                 return True
-            delay = 1.0
+            delay = 0.1
             macro_name = rest
             if ' ' in rest:
                 parts = rest.split()
@@ -1574,5 +1675,5 @@ plugin_info = {
     'register': lambda assistant: assistant.handlers.append(MacroCommandHandler(assistant)),
     'methods': [],
     'classes': [MacroRecorder, MacroCommandHandler],
-    'description': 'Ghi và chạy macro với IF/ELIF/ELSE, LOOP, FOREACH (hỗ trợ unpack), WHILE, FUNCTION/CALL (hỗ trợ *args, **kwargs và tham số mặc định), INPUT, SET (hỗ trợ unpack gán), ?, PRINT, IMPORT, FROM IMPORT, PYTHON, BREAK, CONTINUE, TRY/FINALLY/EXCEPT, MATCH/CASE, WITH, ASSERT, DEL, PASS, RAISE, RETURN nhiều giá trị - ĐÃ CHUYỂN SANG CÚ PHÁP BIẾN $ (ví dụ $ten, ${biểu thức}) thay vì {}'
+    'description': 'Ghi và chạy macro với IF/ELIF/ELSE, LOOP, FOREACH (hỗ trợ unpack), WHILE, FUNCTION/CALL (hỗ trợ *args, **kwargs và tham số mặc định), INPUT, SET (hỗ trợ unpack gán), ?, PRINT, IMPORT, FROM IMPORT, PYTHON, BREAK, CONTINUE, TRY/FINALLY/EXCEPT, MATCH/CASE, WITH, ASSERT, DEL, PASS, RAISE, RETURN nhiều giá trị, QUIET ON/OFF (im lặng toàn cục) - CÚ PHÁP BIẾN $ (ví dụ $ten, ${biểu thức}) thay vì {}'
 }
