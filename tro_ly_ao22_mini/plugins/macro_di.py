@@ -1,4 +1,4 @@
-# macro.py - OCP Complete Refactor
+# Thêm từ khóa BACKGROUND, WAIT 
 import ast
 import textwrap
 import os
@@ -7,6 +7,8 @@ import time
 import builtins
 import random
 import re
+import math
+import threading          # <--- BỔ SUNG cho BACKGROUND
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional, Tuple, Callable, Type
 
@@ -41,6 +43,10 @@ class MacroRegistry:
         self.try_command_class: Type = None
         self.match_command_class: Type = None
         self.with_command_class: Type = None
+        # Mới: BACKGROUND, WAIT
+        self.background_command_class: Type = None
+        self.background_line_command_class: Type = None
+        self.wait_command_class: Type = None
 
         # Helper classes
         self.string_utils_class: Type = None
@@ -103,6 +109,35 @@ class ContinueException(Exception):
 
 class AssertionFailedError(Exception):
     pass
+
+# ==============================
+# 1b. Quản lý tác vụ nền (BACKGROUND)
+# ==============================
+class BackgroundTask:
+    def __init__(self, thread: threading.Thread, command, ctx):
+        self.thread = thread
+        self.command = command
+        self.ctx = ctx
+        self.exception: Optional[Exception] = None
+
+class BackgroundManager:
+    _instance = None
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance.tasks = []
+        return cls._instance
+
+    def add_task(self, task: BackgroundTask):
+        self.tasks.append(task)
+        task.thread.start()
+
+    def wait_all(self):
+        for task in self.tasks:
+            task.thread.join()
+            if task.exception:
+                raise task.exception
+        self.tasks.clear()
 
 # ==============================
 # 2. Macro Recorder (giữ nguyên)
@@ -233,7 +268,7 @@ class VariableResolver:
             'str': str, 'int': int, 'float': float,
             'list': list, 'dict': dict, 'set': set, 'tuple': tuple, 'zip': zip, 'range': range, 'map': map,
             'min': min, 'max': max, 'sum': sum, 
-            'all': all, 'any': any, 'filter': filter, 'enumerate': enumerate,
+            'all': all, 'any': any, 'filter': filter, 'enumerate': enumerate, 'math': math,
             'True': True, 'False': False, 'None': None
         })
         try:
@@ -991,6 +1026,57 @@ class WithCommand(MacroCommand):
             raise exc_info[1]
         return ret
 
+# ---------- Lệnh BACKGROUND / WAIT (mới) ----------
+class BackgroundCommand(MacroCommand):
+    def __init__(self, body: BlockCommand):
+        self.body = body
+
+    def execute(self, ctx: MacroContext) -> Optional[Any]:
+        # Tạo context riêng để tránh xung đột biến
+        sub_ctx = ctx.registry.create_context(
+            ctx.assistant, ctx.delay, ctx.auto_input.original_input
+        )
+        sub_ctx.variables = ctx.variables.copy()
+        sub_ctx.functions = ctx.functions
+        sub_ctx.python_namespace = ctx.python_namespace.copy()
+        sub_ctx.auto_input = ctx.auto_input
+        sub_ctx.quiet = ctx.quiet
+
+        def run():
+            task = None
+            try:
+                self.body.execute(sub_ctx)
+            except Exception as e:
+                # Lưu lỗi vào task nếu có
+                if task:
+                    task.exception = e
+        task_obj = BackgroundTask(threading.Thread(target=run), self.body, sub_ctx)
+        # Gắn task vào để có thể gán exception
+        task_obj.thread._bg_task = task_obj
+        original_run = task_obj.thread.run
+        def wrapped_run():
+            try:
+                original_run()
+            except Exception as e:
+                task_obj.exception = e
+        task_obj.thread.run = wrapped_run
+        BackgroundManager().add_task(task_obj)
+        return None
+
+class BackgroundLineCommand(MacroCommand):
+    def __init__(self, command: MacroCommand):
+        self.command = command
+
+    def execute(self, ctx: MacroContext) -> Optional[Any]:
+        block = BlockCommand([self.command])
+        bg = BackgroundCommand(block)
+        return bg.execute(ctx)
+
+class WaitCommand(MacroCommand):
+    def execute(self, ctx: MacroContext) -> Optional[Any]:
+        BackgroundManager().wait_all()
+        return None
+
 # ==============================
 # 5. Macro Parser (sử dụng registry)
 # ==============================
@@ -1577,10 +1663,35 @@ def register_all_parsers(registry: MacroRegistry):
         return registry.regular_command_class(inner_line, silent=True), pos+1
     registry.register_parser(parse_silent)
 
-    # REGULAR (fallback)
+    # ======================= MỚI: BACKGROUND / WAIT =======================
+    def parse_background(lines, pos, end, functions, registry):
+        line = lines[pos].strip()
+        if line == 'BACKGROUND':
+            j, _ = MacroParser.find_block_end(lines, pos, end, 'BACKGROUND', 'ENDBACKGROUND')
+            body_children, _ = MacroParser._parse_sequence(lines, pos+1, j, functions, registry)
+            bg_cmd = registry.background_command_class(BlockCommand(body_children))
+            return bg_cmd, j+1
+        if line.startswith('BACKGROUND '):
+            rest = line[11:].strip()
+            pseudo_lines = [rest]
+            cmd, _ = MacroParser._parse_command(pseudo_lines, 0, 1, functions, registry)
+            if cmd:
+                bg_line_cmd = registry.background_line_command_class(cmd)
+                return bg_line_cmd, pos+1
+        return None, pos
+    registry.register_parser(parse_background)
+
+    def parse_wait(lines, pos, end, functions, registry):
+        line = lines[pos].strip()
+        if line == 'WAIT':
+            return registry.wait_command_class(), pos+1
+        return None, pos
+    registry.register_parser(parse_wait)
+
+    # REGULAR (fallback) - phải ở cuối cùng
     def parse_regular(lines, pos, end, functions, registry):
         line = lines[pos].strip()
-        if line.startswith(('FUNCTION ', 'IF ', 'LOOP ', 'FOREACH ', 'WHILE ', 'CALL ', 'SET ', 'INPUT ', 'PRINT ', '? ', 'RETURN ', 'IMPORT ', 'FROM ', 'PYTHON ', 'PYBLOCK ', 'BREAK', 'CONTINUE', 'TRY', 'MATCH ', 'WITH ', 'RAISE ', 'ASSERT ', 'DEL ', 'PASS', 'QUIET ', 'SILENT ')):
+        if line.startswith(('FUNCTION ', 'IF ', 'LOOP ', 'FOREACH ', 'WHILE ', 'CALL ', 'SET ', 'INPUT ', 'PRINT ', '? ', 'RETURN ', 'IMPORT ', 'FROM ', 'PYTHON ', 'PYBLOCK ', 'BREAK', 'CONTINUE', 'TRY', 'MATCH ', 'WITH ', 'RAISE ', 'ASSERT ', 'DEL ', 'PASS', 'QUIET ', 'SILENT ', 'BACKGROUND', 'WAIT')):
             return None, pos
         if ' -> ' in line:
             cmd, var = line.split(' -> ', 1)
@@ -1616,6 +1727,10 @@ def setup_default_registry(registry: MacroRegistry):
     registry.try_command_class = TryCommand
     registry.match_command_class = MatchCommand
     registry.with_command_class = WithCommand
+    # Mới
+    registry.background_command_class = BackgroundCommand
+    registry.background_line_command_class = BackgroundLineCommand
+    registry.wait_command_class = WaitCommand
 
     registry.string_utils_class = StringUtils
     registry.variable_resolver_class = VariableResolver
@@ -1681,7 +1796,7 @@ class MacroCommandHandler:
             if not rest:
                 print('❌ Thiếu tên macro.')
                 return True
-            delay = 0.1
+            delay = 0.0
             macro_name = rest
             if ' ' in rest:
                 parts = rest.split()
@@ -1715,7 +1830,13 @@ class MacroCommandHandler:
 setup_default_registry(_global_registry)
 # Đăng ký tất cả parser (cần registry đã có các class)
 register_all_parsers(_global_registry)
+# Cuối macro.py, trước plugin_info
+class MyPrintCommand(PrintCommand):
+    def execute(self, ctx):
+        #print("🔊", end=" ")
+        return super().execute(ctx)
 
+_global_registry.print_command_class = MyPrintCommand
 # ==============================
 # 11. Plugin info
 # ==============================
@@ -1724,5 +1845,5 @@ plugin_info = {
     'register': lambda assistant: assistant.handlers.append(MacroCommandHandler(assistant)),
     'methods': [],
     'classes': [MacroRecorder, MacroCommandHandler],
-    'description': 'Ghi và chạy macro với IF/ELIF/ELSE, LOOP, FOREACH (hỗ trợ unpack), WHILE, FUNCTION/CALL (hỗ trợ *args, **kwargs và tham số mặc định), INPUT, SET (hỗ trợ unpack gán), ?, PRINT, IMPORT, FROM IMPORT, PYTHON, BREAK, CONTINUE, TRY/FINALLY/EXCEPT, MATCH/CASE, WITH, ASSERT, DEL, PASS, RAISE, RETURN nhiều giá trị, QUIET ON/OFF (im lặng toàn cục) - CÚ PHÁP BIẾN $ (ví dụ $ten, ${biểu thức}) thay vì {} - **OCP Complete: mọi thành phần (kể cả MacroContext) đều có thể ghi đè qua MacroRegistry**'
-  }
+    'description': 'Ghi và chạy macro với IF/ELIF/ELSE, LOOP, FOREACH (hỗ trợ unpack), WHILE, FUNCTION/CALL (hỗ trợ *args, **kwargs và tham số mặc định), INPUT, SET (hỗ trợ unpack gán), ?, PRINT, IMPORT, FROM IMPORT, PYTHON, BREAK, CONTINUE, TRY/FINALLY/EXCEPT, MATCH/CASE, WITH, ASSERT, DEL, PASS, RAISE, RETURN nhiều giá trị, QUIET ON/OFF (im lặng toàn cục) - **THÊM BACKGROUND/WAIT để chạy tác vụ nặng song song** - CÚ PHÁP BIẾN $ (ví dụ $ten, ${biểu thức}) thay vì {} - **OCP Complete: mọi thành phần đều có thể ghi đè qua MacroRegistry**'
+}
