@@ -1,7 +1,4 @@
-# thiết kế lại kiến để dễ dàng mở rộng 
-# https://chat.deepseek.com/share/1ug4jod6noos7fk8om
-# thêm chức năng 
-# thêm chức năng ghi công thức cho ô
+# thêm return ở mọi nơi
 import os
 import shlex
 from openpyxl import Workbook, load_workbook
@@ -72,7 +69,7 @@ class ExcelProHandler:
             parts = shlex.split(command)
             if len(parts) < 2:
                 print("❌ Lệnh excel thiếu tham số")
-                return
+                return None
 
             # Bỏ qua 'excel' ở đầu
             args = parts[1:]
@@ -89,7 +86,7 @@ class ExcelProHandler:
                         continue
                     else:
                         print("⚠️ Thiếu tên file sau -f/--file")
-                        return
+                        return None
                 new_args.append(args[i])
                 i += 1
 
@@ -97,11 +94,11 @@ class ExcelProHandler:
                 self.file = filename
             elif self.file is None:
                 print("⚠️ Chưa chỉ định file. Dùng -f <tên_file> hoặc lệnh setfile")
-                return
+                return None
 
             if not new_args:
                 print("❌ Thiếu tên lệnh")
-                return
+                return None
 
             cmd = new_args[0].lower()
             cmd_args = new_args[1:] if len(new_args) > 1 else []
@@ -110,14 +107,15 @@ class ExcelProHandler:
             method = self.commands.get(cmd)
             if not method:
                 print(f"❌ Lệnh không hợp lệ: {cmd}")
-                return
+                return None
 
-            # Gọi method, có thể có hoặc không decorator @with_worksheet
-            # Một số lệnh không cần worksheet (create, setfile, copy, manual...)
-            method(cmd_args)
+            # Gọi method và trả về kết quả
+            result = method(cmd_args)
+            return result
 
         except Exception as e:
             print(f"⚠️ Lỗi: {e}")
+            return None
 
     # ================== ĐỊNH NGHĨA CÁC LỆNH ==================
     # Mỗi lệnh là method cmd_<tên>, với tham số args (list)
@@ -125,17 +123,18 @@ class ExcelProHandler:
     # và tham số đầu tiên là ws (worksheet)
 
     def cmd_create(self, args):
-        """Tạo file Excel mới"""
+        """Tạo file Excel mới, trả về True nếu thành công"""
         wb = Workbook()
         wb.save(self.file)
         print(f"✅ Đã tạo file {self.file}")
+        return True
 
     @with_worksheet
     def cmd_add(self, ws, args):
-        """Thêm dòng dữ liệu"""
+        """Thêm dòng dữ liệu, trả về số dòng đã thêm (1) hoặc None nếu lỗi"""
         if not args:
             print("⚠️ excel add <giá_trị1> <giá_trị2> ...")
-            return
+            return None
         row = []
         for x in args:
             try:
@@ -144,73 +143,93 @@ class ExcelProHandler:
                 row.append(x)
         ws.append(row)
         print(f"✅ Đã thêm: {row}")
+        return row  # trả về dòng đã thêm
 
     @with_worksheet
     def cmd_read(self, ws, args):
-        """Đọc nội dung"""
+        """Đọc nội dung, trả về list các dòng (mỗi dòng là tuple)"""
+        data = []
         for row in ws.iter_rows(values_only=True):
             print(row)
+            data.append(row)
+        return data
 
     @with_worksheet
     def cmd_update(self, ws, args):
-        """Cập nhật ô: update <hàng> <cột> <giá_trị>"""
+        """Cập nhật ô, trả về giá trị cũ hoặc None"""
         if len(args) < 3:
             print("⚠️ excel update <hàng> <cột> <giá_trị>")
-            return
+            return None
         r, c = int(args[0]), int(args[1])
         val = args[2]
+        # Thử chuyển đổi sang số nếu được
+        try:
+            val = float(val)
+            if val.is_integer():
+                val = int(val)
+        except ValueError:
+            pass  # giữ nguyên chuỗi
+        old_val = ws.cell(row=r, column=c).value
         ws.cell(row=r, column=c).value = val
         print("✅ Đã cập nhật")
+        return old_val
+
 
     @with_worksheet
     def cmd_delete(self, ws, args):
-        """Xóa dòng: delete <hàng>"""
+        """Xóa dòng, trả về số dòng đã xóa (1) hoặc None"""
         if not args:
             print("⚠️ excel delete <hàng>")
-            return
+            return None
         ws.delete_rows(int(args[0]))
         print("🗑 Đã xóa dòng")
+        return 1
 
     @with_worksheet
     def cmd_delrows(self, ws, args):
-        """Xóa khoảng dòng: delrows <hàng_đầu> <hàng_cuối>"""
+        """Xóa khoảng dòng, trả về số dòng đã xóa"""
         if len(args) < 2:
             print("⚠️ excel delrows <hàng_đầu> <hàng_cuối>")
-            return
+            return None
         start, end = int(args[0]), int(args[1])
         count = end - start + 1
         ws.delete_rows(start, count)
         print(f"🗑 Đã xóa dòng {start} đến {end}")
+        return count
 
     @with_worksheet
     def cmd_delcolrange(self, ws, args):
-        """Xóa dữ liệu cột theo dòng: delcolrange <cột> <hàng_đầu> <hàng_cuối>"""
+        """Xóa dữ liệu cột theo dòng, trả về số ô đã xóa"""
         if len(args) < 3:
             print("⚠️ excel delcolrange <cột> <hàng_đầu> <hàng_cuối>")
-            return
+            return None
         col, start, end = int(args[0]), int(args[1]), int(args[2])
+        count = 0
         for row in range(start, end + 1):
             ws.cell(row=row, column=col).value = None
+            count += 1
         print(f"🗑 Đã xóa dữ liệu cột {col}, dòng {start}-{end}")
+        return count
 
     @with_worksheet
     def cmd_find(self, ws, args):
-        """Tìm kiếm từ khóa"""
+        """Tìm kiếm từ khóa, trả về list các dòng chứa keyword"""
         if not args:
             print("⚠️ excel find <từ_khóa>")
-            return
+            return None
         keyword = args[0]
-        found = False
+        found_rows = []
         for row in ws.iter_rows(values_only=True):
             if any(keyword in str(cell) for cell in row):
                 print("🔍", row)
-                found = True
-        if not found:
+                found_rows.append(row)
+        if not found_rows:
             print(f"Không tìm thấy '{keyword}'")
+        return found_rows
 
     @with_worksheet
     def cmd_avg(self, ws, args):
-        """Tính trung bình tất cả số"""
+        """Tính trung bình tất cả số, trả về avg hoặc None"""
         nums = []
         for row in ws.iter_rows(values_only=True):
             for cell in row:
@@ -220,15 +239,17 @@ class ExcelProHandler:
             avg = sum(nums) / len(nums)
             self.assistant.context['avg'] = avg
             print(f"📊 AVG = {avg}")
+            return avg
         else:
             print("⚠️ Không có số nào")
+            return None
 
     @with_worksheet
     def cmd_avg_range(self, ws, args):
-        """Trung bình cột theo dòng: avg_range <cột> <hàng_đầu> <hàng_cuối>"""
+        """Trung bình cột theo dòng, trả về avg hoặc None"""
         if len(args) < 3:
             print("⚠️ excel avg_range <cột> <hàng_đầu> <hàng_cuối>")
-            return
+            return None
         col, start, end = int(args[0]), int(args[1]), int(args[2])
         nums = []
         for row in range(start, end + 1):
@@ -241,12 +262,14 @@ class ExcelProHandler:
             avg = sum(nums) / len(nums)
             print(f"📊 AVG (cột {col}, dòng {start}-{end}) = {avg}")
             self.assistant.context['avg_range'] = avg
+            return avg
         else:
             print("⚠️ Không có dữ liệu số trong khoảng")
+            return None
 
     @with_worksheet
     def cmd_chart(self, ws, args):
-        """Vẽ biểu đồ"""
+        """Vẽ biểu đồ, trả về tên file ảnh đã lưu hoặc None"""
         data = []
         for row in ws.iter_rows(values_only=True):
             for cell in row:
@@ -254,17 +277,18 @@ class ExcelProHandler:
                     data.append(cell)
         if not data:
             print("⚠️ Không có dữ liệu số")
-            return
+            return None
         plt.figure()
         plt.plot(data)
         plt.title("Excel Data Chart")
         plt.savefig("chart.png")
         plt.close()
         print("📈 Đã lưu chart.png")
+        return "chart.png"
 
     @with_worksheet
     def cmd_auto(self, ws, args):
-        """Quyết định BUY/WAIT dựa trên số cuối"""
+        """Quyết định BUY/WAIT dựa trên số cuối, trả về decision string"""
         data = []
         for row in ws.iter_rows(values_only=True):
             for cell in row:
@@ -272,7 +296,7 @@ class ExcelProHandler:
                     data.append(cell)
         if len(data) < 2:
             print("⚠️ Không đủ dữ liệu (cần ít nhất 2 số)")
-            return
+            return None
         avg_prev = sum(data[:-1]) / len(data[:-1])
         last = data[-1]
         print(f"Trung bình (trừ số cuối): {avg_prev}")
@@ -280,9 +304,10 @@ class ExcelProHandler:
         decision = "BUY" if last < avg_prev else "WAIT"
         print(f"🤖 Quyết định: {decision}")
         self.assistant.context['decision'] = decision
+        return decision
 
     def cmd_copy(self, args):
-        """Sao chép file: copy [nguồn] đích"""
+        """Sao chép file, trả về True nếu thành công"""
         if len(args) == 1:
             source = self.file
             dest = args[0]
@@ -290,50 +315,51 @@ class ExcelProHandler:
             source, dest = args[0], args[1]
         else:
             print("⚠️ excel copy <đích>  hoặc  excel copy <nguồn> <đích>")
-            return
+            return None
         if not os.path.exists(source):
             print(f"⚠️ File nguồn không tồn tại: {source}")
-            return
+            return None
         wb = load_workbook(source)
         wb.save(dest)
         print(f"✅ Đã sao chép {source} -> {dest}")
+        return True
 
     def cmd_setfile(self, args):
-        """Đặt file mặc định: setfile <tên_file>"""
+        """Đặt file mặc định, trả về tên file đã đặt"""
         if not args:
             print("⚠️ excel setfile <tên_file>")
-            return
+            return None
         self.file = args[0]
         print(f"📁 Đã đặt file mặc định: {self.file}")
+        return self.file
 
     @with_worksheet
     def cmd_header(self, ws, args):
-        """
-        Sửa hàng tiêu đề (dòng 1)
-        Cú pháp:
-            header cột "nội dung"
-            header "nd1" "nd2" ...
-        """
+        """Sửa hàng tiêu đề, trả về số ô đã sửa"""
         if not args:
             print("⚠️ excel header <cột> \"nội dung\"  hoặc  excel header \"nd1\" \"nd2\" ...")
-            return
+            return None
         if len(args) == 2 and args[0].isdigit():
             col = int(args[0])
             value = args[1].strip('"')
             ws.cell(row=1, column=col).value = value
             print(f"✅ Đã sửa tiêu đề cột {col} thành: {value}")
+            return 1
         else:
+            count = 0
             for idx, val in enumerate(args, start=1):
                 clean_val = val.strip('"')
                 ws.cell(row=1, column=idx).value = clean_val
-            print(f"✅ Đã cập nhật {len(args)} ô tiêu đề")
+                count += 1
+            print(f"✅ Đã cập nhật {count} ô tiêu đề")
+            return count
 
     @with_worksheet
     def cmd_comment(self, ws, args):
-        """Thêm comment: comment <hàng> <cột> \"nội dung\" """
+        """Thêm comment, trả về nội dung comment đã thêm"""
         if len(args) < 3:
             print("⚠️ excel comment <hàng> <cột> \"nội dung\"")
-            return
+            return None
         row, col = int(args[0]), int(args[1])
         comment_text = ' '.join(args[2:]).strip('"')
         cell = ws.cell(row=row, column=col)
@@ -341,13 +367,13 @@ class ExcelProHandler:
             cell.comment = None
         cell.comment = Comment(comment_text, "User")
         print(f"✅ Đã thêm comment vào ô ({row},{col}): \"{comment_text}\"")
+        return comment_text
 
     def cmd_manual(self, args):
-        """Nhập dữ liệu thủ công tương tác"""
+        """Nhập dữ liệu thủ công, trả về số dòng đã thêm"""
         if not self.file:
             print("⚠️ Chưa chỉ định file. Dùng setfile hoặc -f trước.")
-            return
-        # Tạo file nếu chưa tồn tại
+            return None
         if not os.path.exists(self.file):
             print(f"⚠️ File {self.file} chưa tồn tại, sẽ tạo mới.")
             wb = Workbook()
@@ -358,7 +384,7 @@ class ExcelProHandler:
             num_cols = int(input("Nhập số cột dữ liệu: "))
         except:
             print("❌ Số cột không hợp lệ")
-            return
+            return None
         print("Nhập dữ liệu từng dòng (cách nhau bằng khoảng trắng hoặc dấu phẩy), 'done' để kết thúc")
         row_count = 0
         while True:
@@ -387,32 +413,29 @@ class ExcelProHandler:
             print(f"💾 Đã lưu {row_count} dòng vào {self.file}")
         else:
             print("Không có dữ liệu nào được thêm.")
+        return row_count
 
     @with_worksheet
     def cmd_delcol(self, ws, args):
-        """Xóa hẳn một cột: delcol <cột>"""
+        """Xóa hẳn một cột, trả về số cột đã xóa (1)"""
         if not args:
             print("⚠️ excel delcol <cột>")
-            return
+            return None
         col = int(args[0])
         ws.delete_cols(col)
         print(f"🗑 Đã xóa cột {col}")
+        return 1
 
     @with_worksheet
     def cmd_autofit(self, ws, args):
-        """
-        Tự động khớp độ rộng cột
-        autofit              -> tất cả cột có dữ liệu
-        autofit 1 3 5        -> chỉ các cột 1,3,5
-        """
+        """Tự động khớp độ rộng cột, trả về list các cột đã xử lý"""
         if args:
             try:
                 columns = [int(a) for a in args]
             except:
                 print("⚠️ Tham số cột phải là số")
-                return
+                return None
         else:
-            # Xác định cột cuối cùng có dữ liệu
             max_col = 0
             for row in ws.iter_rows(values_only=True):
                 for idx, cell in enumerate(row, start=1):
@@ -420,7 +443,7 @@ class ExcelProHandler:
                         max_col = idx
             if max_col == 0:
                 print("⚠️ Không có dữ liệu")
-                return
+                return None
             columns = list(range(1, max_col + 1))
 
         for col in columns:
@@ -435,16 +458,14 @@ class ExcelProHandler:
             adjusted_width = min(max(max_length + 2, 8), 50)
             ws.column_dimensions[col_letter].width = adjusted_width
         print(f"✅ Đã tự động khớp độ rộng cho {len(columns)} cột")
+        return columns
 
     @with_worksheet
     def cmd_colorminmax(self, ws, args):
-        """
-        Tô màu min (xanh) và max (hồng) trong một cột (bỏ qua dòng 1)
-        colorminmax <cột>
-        """
+        """Tô màu min/xanh, max/hồng trong một cột, trả về tuple (min_val, max_val)"""
         if not args:
             print("⚠️ excel colorminmax <cột>")
-            return
+            return None
         col = int(args[0])
         min_val = None
         max_val = None
@@ -466,7 +487,7 @@ class ExcelProHandler:
                     max_cells.append(cell)
         if min_val is None:
             print("⚠️ Không có dữ liệu số trong cột")
-            return
+            return None
         min_fill = PatternFill(start_color="90EE90", end_color="90EE90", fill_type="solid")
         max_fill = PatternFill(start_color="FFC0CB", end_color="FFC0CB", fill_type="solid")
         for cell in min_cells:
@@ -474,30 +495,14 @@ class ExcelProHandler:
         for cell in max_cells:
             cell.fill = max_fill
         print(f"✅ Đã tô màu min={min_val} (xanh) và max={max_val} (hồng) tại cột {col}")
+        return (min_val, max_val)
 
-    # ================== HƯỚNG DẪN THÊM LỆNH MỚI ==================
-    # Để thêm chức năng mới, chỉ cần viết method cmd_<tên_lệnh>
-    # - Nếu cần thao tác với worksheet, dùng decorator @with_worksheet
-    # - Tham số args là list các string (đã được split và xử lý quote)
-    # - Tự động đăng ký vào self.commands nhờ __init__
-    # - Có thể thêm alias bằng cách thêm vào dict self.aliases
-    # Ví dụ:
-    # @with_worksheet
-    # def cmd_hello(self, ws, args):
-    #     print("Hello world!", args)
-    # Người dùng gõ: excel hello 1 2 3
-
-    # ================== THÊM CÁC CHỨC NĂNG QUAN TRỌNG KHÁC ==================
-    
     @with_worksheet
     def cmd_find_replace(self, ws, args):
-        """
-        Tìm và thay thế chuỗi trong toàn bộ worksheet.
-        Cú pháp: excel find_replace "tìm" "thay"
-        """
+        """Tìm và thay thế chuỗi, trả về số ô đã thay đổi"""
         if len(args) < 2:
             print("⚠️ excel find_replace \"từ_cần_tìm\" \"thay_thế\"")
-            return
+            return None
         find_str = args[0].strip('"')
         replace_str = args[1].strip('"')
         count = 0
@@ -507,14 +512,11 @@ class ExcelProHandler:
                     cell.value = cell.value.replace(find_str, replace_str)
                     count += 1
         print(f"✅ Đã thay thế '{find_str}' → '{replace_str}' trong {count} ô")
-    
-    
+        return count
+
     @with_worksheet
     def cmd_remove_empty_rows(self, ws, args):
-        """
-        Xóa tất cả các dòng hoàn toàn trống.
-        Cú pháp: excel remove_empty_rows
-        """
+        """Xóa dòng trống, trả về số dòng đã xóa"""
         rows_to_delete = []
         for row_idx in range(1, ws.max_row + 1):
             is_empty = True
@@ -524,61 +526,48 @@ class ExcelProHandler:
                     break
             if is_empty:
                 rows_to_delete.append(row_idx)
-        # Xóa từ dưới lên để tránh ảnh hưởng chỉ số
         for row_idx in reversed(rows_to_delete):
             ws.delete_rows(row_idx)
         print(f"🗑 Đã xóa {len(rows_to_delete)} dòng trống")
-    
-    
+        return len(rows_to_delete)
+
     @with_worksheet
     def cmd_sort(self, ws, args):
-        """
-        Sắp xếp dữ liệu theo một cột (có header dòng 1).
-        Cú pháp: excel sort <cột> [asc|desc]
-        Mặc định: asc (tăng dần)
-        """
+        """Sắp xếp dữ liệu theo cột, trả về True nếu thành công"""
         if not args:
             print("⚠️ excel sort <cột> [asc|desc]")
-            return
+            return None
         try:
             col = int(args[0])
         except ValueError:
             print("⚠️ Cột phải là số")
-            return
+            return None
         order = args[1].lower() if len(args) > 1 else 'asc'
         reverse = (order == 'desc')
         
-        # Lấy dữ liệu từ dòng 2 trở đi (bỏ qua header)
         data_rows = []
         for row in range(2, ws.max_row + 1):
             cell_val = ws.cell(row=row, column=col).value
             row_data = [ws.cell(row=row, column=c).value for c in range(1, ws.max_column + 1)]
             data_rows.append((cell_val, row_data))
         
-        # Sắp xếp
         try:
             data_rows.sort(key=lambda x: x[0] if x[0] is not None else '', reverse=reverse)
         except TypeError:
-            # Nếu có mixed types, ép về string để so sánh
             data_rows.sort(key=lambda x: str(x[0]) if x[0] is not None else '', reverse=reverse)
         
-        # Ghi lại dữ liệu
         for new_row_idx, (_, row_data) in enumerate(data_rows, start=2):
             for col_idx, val in enumerate(row_data, start=1):
                 ws.cell(row=new_row_idx, column=col_idx).value = val
         print(f"✅ Đã sắp xếp theo cột {col} ({order})")
-    
-    
+        return True
+
     @with_worksheet
     def cmd_stat(self, ws, args):
-        """
-        Thống kê cột (bỏ qua dòng header).
-        Cú pháp: excel stat <cột>
-        Hiển thị: sum, avg, min, max, count, số lượng null
-        """
+        """Thống kê cột, trả về dict chứa kết quả"""
         if not args:
             print("⚠️ excel stat <cột>")
-            return
+            return None
         col = int(args[0])
         values = []
         null_count = 0
@@ -590,10 +579,10 @@ class ExcelProHandler:
                 try:
                     values.append(float(val))
                 except (ValueError, TypeError):
-                    pass  # bỏ qua giá trị không phải số
+                    pass
         if not values:
             print("⚠️ Không có dữ liệu số trong cột")
-            return
+            return None
         total = sum(values)
         avg_val = total / len(values)
         min_val = min(values)
@@ -606,102 +595,150 @@ class ExcelProHandler:
         print(f"   Max : {max_val}")
         print(f"   Số lượng số: {count}")
         print(f"   Ô trống: {null_count}")
-        # Lưu vào context
-        self.assistant.context[f'stat_col_{col}'] = {'sum': total, 'avg': avg_val, 'min': min_val, 'max': max_val}
-    
-    
+        stats = {'sum': total, 'avg': avg_val, 'min': min_val, 'max': max_val, 'count': count, 'nulls': null_count}
+        self.assistant.context[f'stat_col_{col}'] = stats
+        return stats
+
     @with_worksheet
     def cmd_transpose(self, ws, args):
-        """
-        Chuyển vị dữ liệu (hàng thành cột, cột thành hàng).
-        Cú pháp: excel transpose
-        """
+        """Chuyển vị dữ liệu, trả về tuple (số_hàng_cũ, số_cột_cũ)"""
         max_row = ws.max_row
         max_col = ws.max_column
         if max_row == 0 or max_col == 0:
             print("⚠️ Không có dữ liệu để chuyển vị")
-            return
-        # Đọc toàn bộ dữ liệu
+            return None
         data = []
         for r in range(1, max_row + 1):
             row_data = []
             for c in range(1, max_col + 1):
                 row_data.append(ws.cell(row=r, column=c).value)
             data.append(row_data)
-        # Xóa nội dung cũ
         ws.delete_rows(1, ws.max_row)
-        # Ghi dữ liệu đã chuyển vị
         for new_c in range(1, len(data) + 1):
             for new_r in range(1, len(data[0]) + 1):
                 ws.cell(row=new_r, column=new_c).value = data[new_c-1][new_r-1]
         print(f"✅ Đã chuyển vị ma trận {max_row}x{max_col} → {max_col}x{max_row}")
-    
-    
+        return (max_row, max_col)
+
     @with_worksheet
     def cmd_merge_sheets(self, ws, args):
-        """
-        Hợp nhất dữ liệu từ nhiều sheet trong cùng workbook vào sheet hiện tại.
-        Cú pháp: excel merge_sheets sheet2 sheet3 ...
-        """
+        """Hợp nhất dữ liệu từ nhiều sheet, trả về số dòng đã thêm (không kể header)"""
         if not args:
             print("⚠️ excel merge_sheets <tên_sheet1> <tên_sheet2> ...")
-            return
-        wb = load_workbook(self.file)  # lấy lại workbook gốc
-        target_ws = wb.active  # sheet đang active
+            return None
+        wb = load_workbook(self.file)
+        target_ws = wb.active
         header = None
-        # Dòng bắt đầu ghi (giả sử sheet hiện tại có thể có header)
         current_row = target_ws.max_row + 1 if target_ws.max_row > 0 else 1
+        total_rows_added = 0
         
         for sheet_name in args:
             if sheet_name not in wb.sheetnames:
                 print(f"⚠️ Sheet '{sheet_name}' không tồn tại, bỏ qua")
                 continue
             src_ws = wb[sheet_name]
-            # Nếu là sheet đầu tiên và chưa có header thì lấy header từ sheet đó
             if header is None and current_row == 1 and target_ws.max_row == 0:
                 header = [src_ws.cell(row=1, column=c).value for c in range(1, src_ws.max_column + 1)]
                 for col_idx, val in enumerate(header, start=1):
                     target_ws.cell(row=1, column=col_idx).value = val
                 current_row = 2
-                # Bỏ qua dòng header của source
                 start_src_row = 2
             else:
                 start_src_row = 1
-            # Copy dữ liệu từ source sang target
             for r in range(start_src_row, src_ws.max_row + 1):
                 for c in range(1, src_ws.max_column + 1):
                     val = src_ws.cell(row=r, column=c).value
                     target_ws.cell(row=current_row, column=c).value = val
                 current_row += 1
+                total_rows_added += 1
         wb.save(self.file)
         print(f"✅ Đã hợp nhất {len(args)} sheet vào sheet hiện tại")
+        return total_rows_added
 
     @with_worksheet
     def cmd_formula(self, ws, args):
-        """
-        Gán công thức cho một ô.
-        Cú pháp: excel formula <hàng> <cột> <công_thức>
-        Ví dụ: excel formula 2 3 "=A1+B1"
-               excel formula 1 1 "SUM(A2:A10)"
-        """
+        """Gán công thức cho ô, trả về công thức đã gán"""
         if len(args) < 3:
             print("⚠️ excel formula <hàng> <cột> <công_thức>")
-            return
+            return None
         try:
             row = int(args[0])
             col = int(args[1])
         except ValueError:
             print("⚠️ Hàng và cột phải là số")
-            return
-    
-        # Ghép lại phần còn lại thành công thức (có thể chứa dấu cách)
+            return None
         formula = ' '.join(args[2:]).strip()
         if not formula.startswith('='):
             formula = '=' + formula
-    
         ws.cell(row=row, column=col).value = formula
         print(f"✅ Đã gán công thức '{formula}' vào ô ({row},{col})")
+        return formula
 
+    @with_worksheet
+    def cmd_getcol(self, ws, args):
+        """Lấy dữ liệu 1 cột thành list, trả về list"""
+        if not args:
+            print("⚠️ excel getcol <cột> [start] [end]")
+            return None
+        try:
+            col = int(args[0])
+            start = int(args[1]) if len(args) >= 2 else 1
+            end = int(args[2]) if len(args) >= 3 else ws.max_row
+        except ValueError:
+            print("⚠️ Tham số phải là số")
+            return None
+        data = []
+        for row in range(start, end + 1):
+            val = ws.cell(row=row, column=col).value
+            if val is not None:
+                data.append(val)
+        self.assistant.context[f'col_{col}'] = data
+        return data
+
+    @with_worksheet
+    def cmd_set_range(self, ws, args):
+        """
+        Đặt giá trị cho một cột trong khoảng hàng.
+        Cú pháp: excel set_range <cột> <hàng_đầu> <hàng_cuối> <giá_trị>
+        Giá trị có thể là số hoặc chuỗi (dùng ngoặc kép nếu có dấu cách).
+        Trả về số ô đã được gán giá trị.
+        """
+        if len(args) < 4:
+            print("⚠️ excel set_range <cột> <hàng_đầu> <hàng_cuối> <giá_trị>")
+            return None
+        try:
+            col = int(args[0])
+            start_row = int(args[1])
+            end_row = int(args[2])
+        except ValueError:
+            print("⚠️ Cột, hàng đầu, hàng cuối phải là số nguyên")
+            return None
+        
+        # Ghép phần còn lại thành giá trị (có thể có dấu cách)
+        raw_value = ' '.join(args[3:])
+        # Bỏ dấu ngoặc kép nếu có
+        if raw_value.startswith('"') and raw_value.endswith('"'):
+            raw_value = raw_value[1:-1]
+        # Thử chuyển thành số nếu được
+        try:
+            value = float(raw_value)
+            if value.is_integer():
+                value = int(value)
+        except ValueError:
+            value = raw_value
+    
+        if start_row > end_row:
+            print("⚠️ Hàng đầu phải nhỏ hơn hoặc bằng hàng cuối")
+            return None
+    
+        count = 0
+        for row in range(start_row, end_row + 1):
+            ws.cell(row=row, column=col).value = value
+            count += 1
+        print(f"✅ Đã đặt giá trị '{value}' cho cột {col}, dòng {start_row}→{end_row} (tổng {count} ô)")
+        return count
+
+    
 def register(assistant):
     assistant.handlers.append(ExcelProHandler(assistant))
 
@@ -728,29 +765,17 @@ plugin_info = {
         'excel setfile myfile.xlsx',
         'excel copy backup.xlsx',
         'excel copy source.xlsx dest.xlsx',
-        'excel -f data.xlsx autofit',           # tự động tất cả
-        'excel -f data.xlsx autofit 1 3 5',     # chỉ cột 1,3,5
-        'excel -f data.xlsx colorminmax 2',   # tô màu min/max ở cột số 2
-            # Tìm và thay thế
-    'excel -f data.xlsx find_replace "old" "new"'
-    
-    # Xóa dòng trống
-    'excel -f data.xlsx remove_empty_rows'
-    
-    # Sắp xếp cột 2 (tăng dần)
-    'excel -f data.xlsx sort 2 asc'
-    
-    # Thống kê cột 3
-    'excel -f data.xlsx stat 3'
-    
-    # Chuyển vị dữ liệu
-    'excel -f data.xlsx transpose'
-    
-    # Hợp nhất dữ liệu từ các sheet "Sales" và "Inventory" vào sheet hiện tại
-    'excel -f data.xlsx merge_sheets Sales Inventory'
-        'excel -f data.xlsx formula 2 3 "=A1+B1"', # công thức cho ô
-    'excel -f data.xlsx formula 4 1 "SUM(A2:A3)"', # công thức cho ô
-
-
+        'excel -f data.xlsx autofit',
+        'excel -f data.xlsx autofit 1 3 5',
+        'excel -f data.xlsx colorminmax 2',
+        'excel -f data.xlsx find_replace "old" "new"',
+        'excel -f data.xlsx remove_empty_rows',
+        'excel -f data.xlsx sort 2 asc',
+        'excel -f data.xlsx stat 3',
+        'excel -f data.xlsx transpose',
+        'excel -f data.xlsx merge_sheets Sales Inventory',
+        'excel -f data.xlsx formula 2 3 "=A1+B1"',
+        'excel -f data.xlsx formula 4 1 "SUM(A2:A3)"',
+        'excel -f data.xlsx getcol 1',
     ],
 }
