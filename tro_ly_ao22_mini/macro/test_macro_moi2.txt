@@ -1,26 +1,39 @@
 
 IMPORT function_macro
 INPUT 6
+INPUT Vinh
 ghi macro demo2
-chạy macro thut_le2
+chạy macro thut_le
 dừng ghi macro 
 PRINT "1- Test xong ghi macro"
+PRINT "===========1"
 
 PRINT "Bắt đầu test ? và auto"
 SET ten = "An"
 PRINT "Xin chào $ten"
 ? Bạn bao nhiêu tuổi? auto: "15"
+
+# biến ($answer) là biến hệ thống 
 IF $answer >= 18
     PRINT "Bạn đã trưởng thành"
 ELSE
     PRINT "Bạn còn nhỏ"
 ENDIF
 PRINT " TEST xong ? và auto"
+PRINT "=============2"
+
+? Bạn tên là gì? 
+# sử dụng tự động ( INPUT Vinh) ở đầu file để trả lời câu hỏi này 
+PRINT "Bạn tên là $answer"
+PRINT "Test xong INPUT"
+PRINT "=============3"
 
 LOOP 3
     PRINT "Lặp"
 ENDLOOP
 PRINT " Test xong LOOP"
+PRINT "=============4"
+
 
 FOREACH x IN [1,2,3,4,5]
 IF $x == 3
@@ -36,6 +49,7 @@ ENDIF
 PRINT $x
 ENDFOREACH
 PRINT "Test xong FOREACH có BREAK"
+PRINT "=========== 5"
 
 FOREACH x IN 1, 2, 3, 4
 IF $x == 2
@@ -44,14 +58,9 @@ ENDIF
 PRINT $x
 ENDFOREACH
 PRINT "Test xong FOREACH có CONTINUE"
+PRINT "=========== 6"
 
-thứ mấy -> answer 
-IF $answer == "Thứ Bảy"
-    PRINT "Đi làm"
- ELSE 
- PRINT "Nghỉ ngơi"
-ENDIF
-PRINT "TEST XONG LẤY DỮ LIỆU CỦA TRỢ LÝ 
+PRINT "============ 7"
 
 SET count = 1
 WHILE $count <= 5
@@ -59,6 +68,7 @@ WHILE $count <= 5
     SET count = $count + 1
 ENDWHILE
 PRINT "Test xong WHILE"
+PRINT "============ 8"
 
 SET lam_bai_tap = TRUE
 SET di_hoc_dung_gio = FALSE
@@ -68,6 +78,7 @@ ELSE
     PRINT "Bị nhắc nhở"
 ENDIF
 PRINT "Test xong AND"
+PRINT "=========== 9"
 
 SET co_tien = FALSE
 SET duoc_bao = TRUE
@@ -238,16 +249,7 @@ IF $mode == "test"
 ELSE
     PRINT "Không chạy vào đây"
 ENDIF
-PRINT "Test xong PASS"SET x = 2
-TRY
-    ASSERT $x >= 5, "Giá trị x không hợp lệ"
-    PRINT "Không lỗi"
-EXCEPT AssertionFailedError as err
-    PRINT "Bắt lỗi: $err"
-FINALLY
-    PRINT "Luôn chạy FINALLY"
-ENDTRY
-PRINT "Test xong FINALLY"
+PRINT "Test xong PASS"
 
 PRINT "=== Test DEL ==="
 SET temp = "giá trị tạm"
@@ -423,7 +425,8 @@ ENDFUNCTION
 
 FUNCTION compute(x, y)
     CALL add(x, y) -> sum
-    CALL multiply(sum, 2) -> result
+    CALL multiply($sum, 2) -> result
+    # nếu viết multiply(sum, 2) là sai
     RETURN result
 ENDFUNCTION
 
@@ -503,4 +506,528 @@ PRINT ${arr.count(2)}
 SET b = {"x": 10, "y": 20}
 
 PRINT ${b.get("x")}
+
+SET my_list2 = ["một", "hai", "ba", "bốn", "năm"]
+SET app = my_list2.append("sáu")
+SET rem = my_list2.remove("hai")
+
+PRINT $my_list2
+
 PRINT "Test xong DOT OPERATOR"
+
+FUNCTION test()
+  PRINT "Trong function"
+ENDFUNCTION
+
+PRINT "Start"
+QUIET ON
+CALL test()
+QUIET OFF
+PRINT "End"
+
+FUNCTION test2()
+  QUIET OFF
+  PRINT "Trong function"
+ENDFUNCTION
+
+PRINT "Start2"
+QUIET ON
+CALL test2()
+QUIET OFF
+PRINT "End2"
+
+
+QUIET ON
+PRINT "Dòng này sẽ không hiện"
+? "Bạn có thấy không?" auto:Có
+PYTHON 100 + 200   
+QUIET OFF
+
+PRINT "Dòng này sẽ hiện"
+
+QUIET OFF
+PRINT "=== BẮT ĐẦU (QUIET OFF) ==="
+? "Bạn thích màu gì?" auto: "Xanh"
+PYTHON 5 * 3 -> ketqua
+PRINT "Kết quả tính toán: ${ketqua}"
+LOOP 2
+    PRINT "Lặp lần ${loop_index}"
+ENDLOOP
+
+QUIET ON
+PRINT "Dòng này KHÔNG hiện vì QUIET ON"
+? "Hỏi nhưng auto, cũng không in dòng '🤖'" auto: "Tự động"
+PYTHON 100 / 4 -> thuong
+PRINT "Kết quả phép chia: ${thuong} - cũng không thấy"
+
+QUIET OFF
+PRINT "=== KẾT THÚC (QUIET OFF) ==="
+
+
+PRINT "Test xong QUIET"
+
+SET keys = ["a", "b", "c"]
+SET values = [1, 2, 3]
+SET my_dict = ${dict(zip(keys, values))}
+PRINT "Dictionary vừa tạo: $my_dict"
+PRINT "${my_dict["b"]}"
+
+SET my_dict = {"a": 1, "b": 2, "c": 3}
+SET keys = ${list(my_dict.keys())}
+SET values = ${list(my_dict.values())}
+PRINT "Keys: $keys"
+PRINT "Values: $values"
+
+PRINT "Test xong tạo dictionary từ 2 list - sử dụng dict(), zip()"
+
+FUNCTION tao_dict(keys, values)
+    PYTHON dict(zip($keys, $values)) -> result
+    RETURN result
+ENDFUNCTION
+
+SET keys = ["a", "b", "c"]
+SET values = [1, 2, 3]
+
+CALL tao_dict(keys, values) -> d
+
+ FOREACH k, v IN d
+   PRINT ${k} = ${v}
+ENDFOREACH
+
+PRINT "Test xong FOREACH k, v IN d "
+
+# Macro: ví dụ sử dụng len và range
+
+# 1. Dùng len() để lấy độ dài chuỗi
+SET chuoi = "Học macro thật vui"
+SET do_dai = ${len(chuoi)}
+PRINT Chuỗi "${chuoi}" có độ dài = ${do_dai}
+
+# 2. Dùng range() để tạo list các số chẵn từ 2 đến 10
+SET so_chan = ${list(range(2, 11, 2))}
+PRINT Các số chẵn: ${so_chan}
+
+# 3. Dùng range() kết hợp với FOREACH để lặp
+FOREACH i IN ${range(1, 6)}
+    PRINT Lần lặp thứ ${i}
+ENDFOREACH
+
+# 4. Dùng len() trong điều kiện IF
+IF ${len(so_chan) > 2}
+    PRINT "Danh sách số chẵn có nhiều hơn 2 phần tử"
+ENDIF
+
+SET so = ${list(range(1, 10))}
+SET so_chan = ${list(filter(lambda x: x%2==0, so))}
+PRINT Số chẵn từ 1-9: ${so_chan}
+SET binh_phuong = ${list(map(lambda x: x**2, so))}
+PRINT Bình phương: ${binh_phuong}
+
+SET ds_ten = ["An", "Bình", "Chi"]
+
+FOREACH idx, ten IN enumerate(ds_ten, 1)
+    PRINT ${idx}. ${ten}
+ENDFOREACH
+PRINT "Test xong FOREACH hỗ trợ iterable đầy đủ "
+
+# ==============================
+# Perceptron học AND logic
+# Không dùng PYTHON
+# ==============================
+
+# 1. Dữ liệu huấn luyện
+SET X = [[0,0], [0,1], [1,0], [1,1]]
+SET y = [0, 0, 0, 1]
+
+# 2. Khởi tạo tham số
+SET w0 = 0.0
+SET w1 = 0.0
+SET w2 = 0.0
+
+SET lr = 0.1
+SET epochs = 10
+
+# 3. Huấn luyện
+LOOP $epochs
+
+    SET total_error = 0
+
+    FOREACH x, target IN zip($X, $y)
+
+        # Tổng tuyến tính
+        SET linear = $w0 + $w1 * ${x[0]} + $w2 * ${x[1]}
+
+        # Step function
+        IF $linear > 0
+            SET pred = 1
+        ELSE
+            SET pred = 0
+        ENDIF
+
+        # Sai thì cập nhật
+        IF $pred != $target
+
+            SET total_error = $total_error + 1
+
+            SET error = $target - $pred
+
+            SET w0 = $w0 + $lr * $error
+            SET w1 = $w1 + $lr * $error * ${x[0]}
+            SET w2 = $w2 + $lr * $error * ${x[1]}
+
+        ENDIF
+
+    ENDFOREACH
+
+    PRINT "Epoch ${loop_index}: total_error = ${total_error}"
+
+    IF $total_error == 0
+        PRINT "🎉 Hội tụ sau epoch ${loop_index}"
+        BREAK
+    ENDIF
+
+ENDLOOP
+
+
+# 4. Kết quả
+PRINT "=== Weights cuối ==="
+PRINT "w0 = ${w0}"
+PRINT "w1 = ${w1}"
+PRINT "w2 = ${w2}"
+
+# 5. Kiểm tra lại
+PRINT "=== Test ==="
+
+FOREACH x, target IN zip($X, $y)
+
+    SET linear = $w0 + $w1 * ${x[0]} + $w2 * ${x[1]}
+
+    IF $linear > 0
+        SET pred = 1
+    ELSE
+        SET pred = 0
+    ENDIF
+
+    PRINT "Input ${x[0]}, ${x[1]} -> predicted=${pred}, expected=${target}"
+
+ENDFOREACH
+
+# ==============================
+# Perceptron học OR logic
+# ==============================
+
+# 1. Dữ liệu huấn luyện
+SET X = [[0,0], [0,1], [1,0], [1,1]]
+SET y = [0, 1, 1, 1]
+
+# 2. Khởi tạo trọng số
+SET w0 = 0.0
+SET w1 = 0.0
+SET w2 = 0.0
+
+SET lr = 0.1
+SET epochs = 20
+
+# 3. Huấn luyện
+LOOP $epochs
+
+    SET total_error = 0
+
+    FOREACH x, target IN zip($X, $y)
+
+        # Tổng tuyến tính
+        SET linear = $w0 + $w1 * ${x[0]} + $w2 * ${x[1]}
+
+        # Step activation
+        IF $linear > 0
+            SET pred = 1
+        ELSE
+            SET pred = 0
+        ENDIF
+
+        # Sai thì cập nhật
+        IF $pred != $target
+
+            SET total_error = $total_error + 1
+
+            SET error = $target - $pred
+
+            SET w0 = $w0 + $lr * $error
+            SET w1 = $w1 + $lr * $error * ${x[0]}
+            SET w2 = $w2 + $lr * $error * ${x[1]}
+
+        ENDIF
+
+    ENDFOREACH
+
+    PRINT "Epoch ${loop_index}: total_error = ${total_error}"
+
+    # Dừng sớm nếu học xong
+    IF $total_error == 0
+        PRINT "🎉 Hội tụ sau epoch ${loop_index}"
+        BREAK
+    ENDIF
+
+ENDLOOP
+
+# 4. In trọng số cuối
+PRINT "=== Weights cuối ==="
+PRINT "w0 = ${w0}"
+PRINT "w1 = ${w1}"
+PRINT "w2 = ${w2}"
+
+# 5. Kiểm tra lại
+PRINT "=== Test OR ==="
+
+FOREACH x, target IN zip($X, $y)
+
+    SET linear = $w0 + $w1 * ${x[0]} + $w2 * ${x[1]}
+
+    IF $linear > 0
+        SET pred = 1
+    ELSE
+        SET pred = 0
+    ENDIF
+
+    PRINT "Input ${x[0]}, ${x[1]} -> predicted=${pred}, expected=${target}"
+
+ENDFOREACH
+
+
+
+# ==========================================
+# XOR Neural Network Training
+# Full Debug Version
+# ==========================================
+
+PRINT "=== Train XOR Neural Network ==="
+
+# ==========================================
+# Dataset XOR
+# ==========================================
+
+SET X = [[0,0], [0,1], [1,0], [1,1]]
+SET y = [0,1,1,0]
+
+# ==========================================
+# Hyperparameters
+# ==========================================
+
+SET lr = 0.8
+SET epochs = 80
+
+# ==========================================
+# Initialize weights
+# ==========================================
+
+# Hidden neuron h1
+SET w1 = 0.1
+SET w2 = 0.2
+SET b1 = 0.3
+
+# Hidden neuron h2
+SET w3 = 0.4
+SET w4 = 0.5
+SET b2 = 0.6
+
+# Output neuron
+SET w5 = 0.7
+SET w6 = 0.8
+SET b3 = 0.9
+
+# ==========================================
+# Training loop
+# ==========================================
+
+LOOP $epochs
+
+    SET total_loss = 0
+
+    FOREACH x, target IN zip($X, $y)
+
+        # ==================================
+        # INPUT
+        # ==================================
+
+        SET x1 = ${x[0]}
+        SET x2 = ${x[1]}
+
+        # ==================================
+        # FORWARD PASS
+        # ==================================
+
+        # Hidden neuron h1
+        SET z1 = $w1*$x1 + $w2*$x2 + $b1
+        SET h1 = 1 / (1 + math.exp(-$z1))
+
+        # Hidden neuron h2
+        SET z2 = $w3*$x1 + $w4*$x2 + $b2
+        SET h2 = 1 / (1 + math.exp(-$z2))
+
+        # Output neuron
+        SET z3 = $w5*$h1 + $w6*$h2 + $b3
+        SET pred = 1 / (1 + math.exp(-$z3))
+
+        # ==================================
+        # LOSS
+        # ==================================
+
+        SET loss = ($target - $pred) ** 2
+        SET total_loss = $total_loss + $loss
+
+        # ==================================
+        # BACKPROP
+        # ==================================
+
+        # dLoss/dPred
+        SET d_pred = -2 * ($target - $pred)
+
+        # sigmoid derivative output
+        SET sig3 = $pred * (1 - $pred)
+
+        # output delta
+        SET delta3 = $d_pred * $sig3
+
+        # gradients output layer
+        SET grad_w5 = $delta3 * $h1
+        SET grad_w6 = $delta3 * $h2
+        SET grad_b3 = $delta3
+
+        # ==================================
+        # Hidden layer gradients
+        # ==================================
+
+        # hidden neuron h1
+        SET sig1 = $h1 * (1 - $h1)
+        SET delta1 = $delta3 * $w5 * $sig1
+
+        # hidden neuron h2
+        SET sig2 = $h2 * (1 - $h2)
+        SET delta2 = $delta3 * $w6 * $sig2
+
+        # gradients h1
+        SET grad_w1 = $delta1 * $x1
+        SET grad_w2 = $delta1 * $x2
+        SET grad_b1 = $delta1
+
+        # gradients h2
+        SET grad_w3 = $delta2 * $x1
+        SET grad_w4 = $delta2 * $x2
+        SET grad_b2 = $delta2
+
+        # ==================================
+        # UPDATE WEIGHTS
+        # ==================================
+
+        SET w1 = $w1 - $lr * $grad_w1
+        SET w2 = $w2 - $lr * $grad_w2
+        SET b1 = $b1 - $lr * $grad_b1
+
+        SET w3 = $w3 - $lr * $grad_w3
+        SET w4 = $w4 - $lr * $grad_w4
+        SET b2 = $b2 - $lr * $grad_b2
+
+        SET w5 = $w5 - $lr * $grad_w5
+        SET w6 = $w6 - $lr * $grad_w6
+        SET b3 = $b3 - $lr * $grad_b3
+
+    ENDFOREACH
+
+    # ==================================
+    # LOG
+    # ==================================
+
+    IF ${loop_index} % 1 == 0
+        PRINT "Epoch ${loop_index}: loss = ${total_loss}"
+    ENDIF
+
+ENDLOOP
+
+# ==========================================
+# PRINT FINAL WEIGHTS
+# ==========================================
+
+
+
+PRINT "=== FINAL WEIGHTS ==="
+
+PRINT "w1 = ${w1}"
+PRINT "w2 = ${w2}"
+PRINT "b1 = ${b1}"
+
+PRINT "w3 = ${w3}"
+PRINT "w4 = ${w4}"
+PRINT "b2 = ${b2}"
+
+PRINT "w5 = ${w5}"
+PRINT "w6 = ${w6}"
+PRINT "b3 = ${b3}"
+
+# ==========================================
+# TEST NETWORK
+# ==========================================
+
+PRINT ""
+PRINT "=== TEST XOR ==="
+
+FOREACH x, target IN zip($X, $y)
+
+    SET x1 = ${x[0]}
+    SET x2 = ${x[1]}
+
+    PRINT ""
+    PRINT "-----------------------------"
+    PRINT "Input: ${x1}, ${x2}"
+
+    # ==================================
+    # FORWARD h1
+    # ==================================
+
+    SET z1 = $w1*$x1 + $w2*$x2 + $b1
+    SET h1 = 1 / (1 + math.exp(-$z1))
+
+    PRINT "z1 = ${z1}"
+    PRINT "h1 = ${h1}"
+
+    # ==================================
+    # FORWARD h2
+    # ==================================
+
+    SET z2 = $w3*$x1 + $w4*$x2 + $b2
+    SET h2 = 1 / (1 + math.exp(-$z2))
+
+    PRINT "z2 = ${z2}"
+    PRINT "h2 = ${h2}"
+
+    # ==================================
+    # OUTPUT
+    # ==================================
+
+    SET z3 = $w5*$h1 + $w6*$h2 + $b3
+    SET pred_raw = 1 / (1 + math.exp(-$z3))
+
+    PRINT "z3 = ${z3}"
+    PRINT "pred_raw = ${pred_raw}"
+
+    # ==================================
+    # THRESHOLD
+    # ==================================
+
+    IF $pred_raw > 0.5
+        SET pred = 1
+    ELSE
+        SET pred = 0
+    ENDIF
+
+    PRINT "predicted = ${pred}"
+    PRINT "expected  = ${target}"
+
+ENDFOREACH
+
+PRINT ""
+PRINT "=== DONE ==="
+
+PRINT "Test xong huấn luyện AI"
+
+
+
