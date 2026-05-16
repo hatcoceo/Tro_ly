@@ -162,5 +162,10 @@ def register(assistant):
 
 
 plugin_info = {'enabled': True, 'register': register, 'command_handle': [
-    'plot 1 2 3', 'plot data.txt', 'plot excel file.xlsx A 2 10',
-    'plot excel file.xlsx Price 2 10']}
+    'plot 1 2 3', 
+    'plot data.txt', 
+    'plot excel file.xlsx A 2 10',
+    'plot excel file.xlsx Price 2 10',
+    'plot excel HPG_data.xlsx B 2 10',
+    
+    ]}
