@@ -1,3 +1,4 @@
+# lưu excel 
 import webbrowser
 from typing import Any
 from vnstock import Vnstock
@@ -65,10 +66,18 @@ class CleanChartHandler:
                     '            getdata all         # lấy dữ liệu nến tất cả cổ phiếu'
                     )
                 print(
+                    '            getdata all excel   # lưu ra file Excel'
+                    )
+                print(
                     '            getdata HPG         # lấy dữ liệu riêng một mã'
+                    )
+                print(
+                    '            getdata HPG excel   # lưu ra file Excel'
                     )
                 return
             sub_cmd = parts[1].lower()
+            save_excel = 'excel' in parts  # Kiểm tra có yêu cầu lưu Excel không
+
             if sub_cmd == 'all':
                 print('🔄 Đang thu thập dữ liệu nến cho tất cả cổ phiếu...')
                 df = self.get_all_candles(days=1)
@@ -76,11 +85,19 @@ class CleanChartHandler:
                     print('\n📊 Kết quả (giá mở cửa, đóng cửa):')
                     print(df[['symbol', 'exchange', 'time', 'open', 'close',
                         'volume']].to_string(index=False))
+                    # Lưu CSV (giữ hành vi cũ)
                     df.to_csv('candle_data.csv', index=False, encoding='utf-8')
                     print('\n✅ Đã lưu vào candle_data.csv')
+                    # Lưu Excel nếu được yêu cầu
+                    if save_excel:
+                        excel_file = 'candle_data.xlsx'
+                        df.to_excel(excel_file, index=False, engine='openpyxl')
+                        print(f'✅ Đã lưu vào {excel_file}')
                 else:
                     print('Không có dữ liệu.')
                 return
+
+            # Xử lý lệnh với mã cổ phiếu cụ thể
             symbol = parts[1].upper()
             if ':' in symbol:
                 print(f'📈 Mở TradingView cho {symbol}')
@@ -93,8 +110,14 @@ class CleanChartHandler:
             if not df.empty:
                 print(df[['time', 'open', 'high', 'low', 'close', 'volume']
                     ].to_string(index=False))
+                # Lưu Excel nếu được yêu cầu
+                if save_excel:
+                    excel_file = f'{symbol}_data.xlsx'
+                    df.to_excel(excel_file, index=False, engine='openpyxl')
+                    print(f'✅ Đã lưu dữ liệu của {symbol} vào {excel_file}')
             else:
                 print(f'Không có dữ liệu cho {symbol}')
+
             if command.startswith('chart') or command.startswith('tv'):
                 self.open_tradingview(symbol, exchange)
                 self.open_fireant(symbol)
@@ -118,4 +141,8 @@ def register(assistant: Any):
 
 
 plugin_info = {'enabled': True, 'register': register, 'command_handle': [
-    'chart', 'tv', 'getdata']}
+    'chart', 
+    'tv', 
+    'getdata HPG excel',
+    'getdata HPG'
+    ]}
