@@ -1,4 +1,6 @@
-# Thêm từ khóa BACKGROUND, WAIT 
+# tạo ra -> cho biến ( ? nhập giá trị -> giatri
+#PRINT $giatri)
+
 import ast
 import textwrap
 import os
@@ -8,45 +10,18 @@ import builtins
 import random
 import re
 import math
-import threading          # <--- BỔ SUNG cho BACKGROUND
+import threading
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional, Tuple, Callable, Type
 
 # ==============================
-# 0. Registry hoàn chỉnh (có factory)
+# 0. Registry hoàn chỉnh (dùng dict)
 # ==============================
 class MacroRegistry:
     """Trung tâm đăng ký các thành phần có thể thay thế"""
     def __init__(self):
-        # Command classes
-        self.set_command_class: Type = None
-        self.input_command_class: Type = None
-        self.print_command_class: Type = None
-        self.question_command_class: Type = None
-        self.return_command_class: Type = None
-        self.import_command_class: Type = None
-        self.regular_command_class: Type = None
-        self.python_command_class: Type = None
-        self.python_block_command_class: Type = None
-        self.if_command_class: Type = None
-        self.loop_command_class: Type = None
-        self.foreach_command_class: Type = None
-        self.while_command_class: Type = None
-        self.call_command_class: Type = None
-        self.break_command_class: Type = None
-        self.continue_command_class: Type = None
-        self.raise_command_class: Type = None
-        self.assert_command_class: Type = None
-        self.del_command_class: Type = None
-        self.pass_command_class: Type = None
-        self.quiet_command_class: Type = None
-        self.try_command_class: Type = None
-        self.match_command_class: Type = None
-        self.with_command_class: Type = None
-        # Mới: BACKGROUND, WAIT
-        self.background_command_class: Type = None
-        self.background_line_command_class: Type = None
-        self.wait_command_class: Type = None
+        # Command classes - lưu trong dict
+        self.command_classes: Dict[str, Type] = {}
 
         # Helper classes
         self.string_utils_class: Type = None
@@ -65,11 +40,16 @@ class MacroRegistry:
         # Command registry (list of parser functions)
         self.command_parsers: List[Callable] = []
 
-    def register_parser(self, parser_func: Callable):
-        self.command_parsers.append(parser_func)
+    def register_command(self, name: str, cmd_class: Type):
+        """Đăng ký một command class với tên gọi (ví dụ 'set', 'if', ...)"""
+        self.command_classes[name] = cmd_class
 
     def get_command_class(self, name: str) -> Type:
-        return getattr(self, f"{name}_command_class", None)
+        """Lấy command class theo tên, trả về None nếu không tồn tại"""
+        return self.command_classes.get(name)
+
+    def register_parser(self, parser_func: Callable):
+        self.command_parsers.append(parser_func)
 
     # ----- Factory methods cho phép ghi đè -----
     def create_context(self, assistant, delay: float, original_input: Callable) -> 'MacroContext':
@@ -93,6 +73,16 @@ _global_registry = MacroRegistry()
 
 def get_registry() -> MacroRegistry:
     return _global_registry
+
+# ==============================
+# 0b. Danh sách parser toàn cục và decorator
+# ==============================
+PARSERS = []
+
+def parser(func):
+    """Decorator đăng ký hàm parser vào danh sách toàn cục"""
+    PARSERS.append(func)
+    return func
 
 # ==============================
 # 1. Cấu hình và biến toàn cục
@@ -231,7 +221,6 @@ class VariableResolver:
                     params, body = func_info
                     defaults = {}
                 def wrapper(*args, **kwargs):
-                    # Dùng factory từ registry của ctx
                     sub_ctx = ctx.registry.create_context(ctx.assistant, ctx.delay, ctx.auto_input.original_input)
                     sub_ctx.variables = ctx.variables.copy()
                     sub_ctx.functions = ctx.functions
@@ -423,7 +412,21 @@ class MacroContext:
         self.functions: Dict[str, Tuple[List[str], Dict[str, str], 'BlockCommand']] = {}
         self.python_namespace = {}
         self.quiet = False
-        self.registry = registry or get_registry()   # lưu lại registry để dùng factory
+        self.registry = registry or get_registry()
+
+    def fork(self) -> 'MacroContext':
+        """Tạo context con sao chép các trạng thái cần thiết (dùng cho BACKGROUND, CALL, IMPORT)."""
+        new_ctx = self.registry.create_context(
+            self.assistant, self.delay, self.auto_input.original_input
+        )
+        new_ctx.variables = self.variables.copy()
+        new_ctx.functions = self.functions
+        new_ctx.python_namespace = self.python_namespace.copy()
+        new_ctx.auto_input = self.auto_input
+        new_ctx.quiet = self.quiet
+        if hasattr(self, 'import_stack'):
+            new_ctx.import_stack = self.import_stack.copy()
+        return new_ctx
 
 class MacroCommand(ABC):
     @abstractmethod
@@ -505,9 +508,10 @@ class PrintCommand(MacroCommand):
         return None
 
 class QuestionCommand(MacroCommand):
-    def __init__(self, question: str, auto_answer: Optional[str] = None):
+    def __init__(self, question: str, auto_answer: Optional[str] = None, store_var: Optional[str] = None):
         self.question = question
         self.auto_answer = auto_answer
+        self.store_var = store_var or 'answer'  # Mặc định là 'answer'
 
     def execute(self, ctx: MacroContext) -> Optional[Any]:
         q = VariableResolver.substitute(self.question, ctx.variables, ctx=ctx)
@@ -522,7 +526,10 @@ class QuestionCommand(MacroCommand):
                 user_input = ctx.auto_input.get_input('')
             else:
                 user_input = ctx.auto_input.get_input(f'\n🤖 {q}\n👉 ')
-        ctx.variables['answer'] = user_input
+        
+        # Lưu vào biến được chỉ định
+        ctx.variables[self.store_var] = user_input
+        
         if not ctx.quiet:
             print()
         return None
@@ -552,7 +559,7 @@ class ImportCommand(MacroCommand):
             return None
         with open(path, 'r', encoding='utf-8') as f:
             raw_lines = f.readlines()
-        registry = ctx.registry   # dùng registry từ context
+        registry = ctx.registry
         imported_root, imported_functions = registry.macro_parser_class.parse(raw_lines)
         if self.functions_only is not None:
             for fname in self.functions_only:
@@ -567,12 +574,7 @@ class ImportCommand(MacroCommand):
                 if fname in ctx.functions:
                     print(f'⚠️ Hàm "{fname}" bị ghi đè bởi import {self.macro_name}')
                 ctx.functions[fname] = fbody
-        sub_ctx = registry.create_context(ctx.assistant, ctx.delay, ctx.auto_input.original_input)
-        sub_ctx.variables = ctx.variables.copy()
-        sub_ctx.functions = ctx.functions
-        sub_ctx.auto_input = ctx.auto_input
-        sub_ctx.python_namespace = ctx.python_namespace
-        sub_ctx.quiet = ctx.quiet
+        sub_ctx = ctx.fork()
         if hasattr(ctx, 'import_stack'):
             sub_ctx.import_stack = ctx.import_stack + [self.macro_name]
         else:
@@ -852,12 +854,7 @@ class CallCommand(MacroCommand):
                     if not ctx.quiet:
                         print(f'❌ Hàm {self.func_name} thiếu đối số bắt buộc: {param}')
                     return None
-        sub_ctx = ctx.registry.create_context(ctx.assistant, ctx.delay, ctx.auto_input.original_input)
-        sub_ctx.variables = ctx.variables.copy()
-        sub_ctx.functions = ctx.functions
-        sub_ctx.python_namespace = ctx.python_namespace
-        sub_ctx.auto_input = ctx.auto_input
-        sub_ctx.quiet = ctx.quiet
+        sub_ctx = ctx.fork()
         for param, val in arg_map.items():
             sub_ctx.variables[param] = val
         ret = func_body.execute(sub_ctx)
@@ -1032,26 +1029,16 @@ class BackgroundCommand(MacroCommand):
         self.body = body
 
     def execute(self, ctx: MacroContext) -> Optional[Any]:
-        # Tạo context riêng để tránh xung đột biến
-        sub_ctx = ctx.registry.create_context(
-            ctx.assistant, ctx.delay, ctx.auto_input.original_input
-        )
-        sub_ctx.variables = ctx.variables.copy()
-        sub_ctx.functions = ctx.functions
-        sub_ctx.python_namespace = ctx.python_namespace.copy()
-        sub_ctx.auto_input = ctx.auto_input
-        sub_ctx.quiet = ctx.quiet
+        sub_ctx = ctx.fork()
 
         def run():
-            task = None
             try:
                 self.body.execute(sub_ctx)
             except Exception as e:
-                # Lưu lỗi vào task nếu có
-                if task:
-                    task.exception = e
+                # Lưu lỗi vào task (task object sẽ được gán sau)
+                if hasattr(threading.current_thread(), '_bg_task'):
+                    threading.current_thread()._bg_task.exception = e
         task_obj = BackgroundTask(threading.Thread(target=run), self.body, sub_ctx)
-        # Gắn task vào để có thể gán exception
         task_obj.thread._bg_task = task_obj
         original_run = task_obj.thread.run
         def wrapped_run():
@@ -1126,6 +1113,15 @@ class MacroParser:
         return j, extra_positions
 
     @staticmethod
+    def parse_block(lines: List[str], start: int, end: int,
+                    start_keyword: str, end_keyword: str,
+                    functions: Dict, registry: MacroRegistry) -> Tuple[int, BlockCommand]:
+        """Phân tích một block từ dòng start (đã có start_keyword) đến end_keyword."""
+        j, _ = MacroParser.find_block_end(lines, start, end, start_keyword, end_keyword)
+        body_children, _ = MacroParser._parse_sequence(lines, start + 1, j, functions, registry)
+        return j, BlockCommand(body_children)
+
+    @staticmethod
     def parse(lines: List[str]) -> Tuple[BlockCommand, Dict[str, Tuple[List[str], Dict[str, str], BlockCommand]]]:
         raw = [line.rstrip('\n') for line in lines]
         functions = {}
@@ -1184,554 +1180,532 @@ class MacroParser:
         line = lines[pos].strip()
         if not line:
             return None, pos + 1
-        for parser in registry.command_parsers:
-            cmd, next_pos = parser(lines, pos, end, functions, registry)
+        for parser_func in registry.command_parsers:
+            cmd, next_pos = parser_func(lines, pos, end, functions, registry)
             if cmd is not None:
                 return cmd, next_pos
         return None, pos + 1
 
 # ==============================
-# 6. Đăng ký các parser (các hàm này nhận thêm registry)
+# 6. Đăng ký các parser (dùng decorator @parser)
 # ==============================
-def register_all_parsers(registry: MacroRegistry):
-    # IF
-    def parse_if(lines, pos, end, functions, registry):
-        line = lines[pos].strip()
-        if not line.startswith('IF '):
-            return None, pos
-        condition = line[3:].strip()
-        j, extra = MacroParser.find_block_end(lines, pos, end, 'IF ', 'ENDIF', find_else=True, find_elif=True)
-        conditions_blocks = []
-        current_start = pos + 1
-        for typ, idx in extra:
-            if typ == 'elif':
-                elif_line = lines[idx].strip()
-                elif_cond = elif_line[5:].strip()
-                block_children, _ = MacroParser._parse_sequence(lines, current_start, idx, functions, registry)
-                conditions_blocks.append((condition, BlockCommand(block_children)))
-                condition = elif_cond
-                current_start = idx + 1
-            elif typ == 'else':
-                block_children, _ = MacroParser._parse_sequence(lines, current_start, idx, functions, registry)
-                conditions_blocks.append((condition, BlockCommand(block_children)))
-                else_children, _ = MacroParser._parse_sequence(lines, idx+1, j, functions, registry)
-                if_cmd = registry.if_command_class(conditions_blocks, BlockCommand(else_children))
-                return if_cmd, j+1
-        block_children, _ = MacroParser._parse_sequence(lines, current_start, j, functions, registry)
-        conditions_blocks.append((condition, BlockCommand(block_children)))
-        if_cmd = registry.if_command_class(conditions_blocks)
-        return if_cmd, j+1
-    registry.register_parser(parse_if)
-
-    # LOOP
-    def parse_loop(lines, pos, end, functions, registry):
-        line = lines[pos].strip()
-        if not line.startswith('LOOP '):
-            return None, pos
-        count_expr = line[5:].strip()
-        j, _ = MacroParser.find_block_end(lines, pos, end, 'LOOP ', 'ENDLOOP')
-        body_children, _ = MacroParser._parse_sequence(lines, pos+1, j, functions, registry)
-        loop_cmd = registry.loop_command_class(count_expr, BlockCommand(body_children))
-        return loop_cmd, j+1
-    registry.register_parser(parse_loop)
-
-    # FOREACH
-    def parse_foreach(lines, pos, end, functions, registry):
-        line = lines[pos].strip()
-        if not line.startswith('FOREACH '):
-            return None, pos
-        rest = line[8:].strip()
-        if ' IN ' not in rest:
-            print(f'❌ Lỗi cú pháp FOREACH: {line}')
-            return None, pos+1
-        left, right = rest.split(' IN ', 1)
-        left = left.strip()
-        vars_pattern = [token.strip() for token in left.split(',') if token.strip()]
-        list_expr = right.strip()
-        j, _ = MacroParser.find_block_end(lines, pos, end, 'FOREACH ', 'ENDFOREACH')
-        body_children, _ = MacroParser._parse_sequence(lines, pos+1, j, functions, registry)
-        foreach_cmd = registry.foreach_command_class(vars_pattern, list_expr, BlockCommand(body_children))
-        return foreach_cmd, j+1
-    registry.register_parser(parse_foreach)
-
-    # WHILE
-    def parse_while(lines, pos, end, functions, registry):
-        line = lines[pos].strip()
-        if not line.startswith('WHILE '):
-            return None, pos
-        condition = line[6:].strip()
-        j, _ = MacroParser.find_block_end(lines, pos, end, 'WHILE ', 'ENDWHILE')
-        body_children, _ = MacroParser._parse_sequence(lines, pos+1, j, functions, registry)
-        while_cmd = registry.while_command_class(condition, BlockCommand(body_children))
-        return while_cmd, j+1
-    registry.register_parser(parse_while)
-
-    # CALL
-    def parse_call(lines, pos, end, functions, registry):
-        line = lines[pos].strip()
-        if not line.startswith('CALL '):
-            return None, pos
-        rest = line[5:].strip()
-        store_var = None
-        if ' -> ' in rest:
-            parts = rest.split(' -> ', 1)
-            call_part = parts[0].strip()
-            store_var = parts[1].strip()
-        else:
-            call_part = rest
-        import re
-        match = re.match(r'^([a-zA-Z_][a-zA-Z0-9_]*)\((.*)\)$', call_part)
-        if not match:
-            print(f'❌ Cú pháp CALL sai: {call_part}')
-            return None, pos+1
-        func_name = match.group(1)
-        args_str = match.group(2).strip()
-        args = []
-        kwargs = {}
-        tokens = MacroParser.split_args(args_str)
-        for t in tokens:
-            t = t.strip()
-            if t.startswith('**'):
-                expr = t[2:].strip()
-                args.append(('starstar', expr))
-            elif t.startswith('*'):
-                expr = t[1:].strip()
-                args.append(('star', expr))
-            elif '=' in t:
-                k, v = t.split('=', 1)
-                kwargs[k.strip()] = v.strip()
-            else:
-                args.append(('pos', t))
-        call_cmd = registry.call_command_class(func_name, args, kwargs, store_var)
-        return call_cmd, pos+1
-    registry.register_parser(parse_call)
-
-    # SET
-    def parse_set(lines, pos, end, functions, registry):
-        line = lines[pos].strip()
-        if not line.startswith('SET '):
-            return None, pos
-        rest = line[4:].strip()
-        if '=' not in rest:
-            return None, pos+1
-        left, right = rest.split('=', 1)
-        left = left.strip()
-        targets = [token.strip() for token in left.split(',') if token.strip()]
-        value_expr = right.strip()
-        set_cmd = registry.set_command_class(targets, value_expr)
-        return set_cmd, pos+1
-    registry.register_parser(parse_set)
-
-    # INPUT
-    def parse_input(lines, pos, end, functions, registry):
-        line = lines[pos].strip()
-        if not line.startswith('INPUT '):
-            return None, pos
-        input_cmd = registry.input_command_class(line[6:].strip())
-        return input_cmd, pos+1
-    registry.register_parser(parse_input)
-
-    # PRINT
-    def parse_print(lines, pos, end, functions, registry):
-        line = lines[pos].strip()
-        if not line.startswith('PRINT '):
-            return None, pos
-        print_cmd = registry.print_command_class(line[6:].strip())
-        return print_cmd, pos+1
-    registry.register_parser(parse_print)
-
-    # QUESTION
-    def parse_question(lines, pos, end, functions, registry):
-        line = lines[pos].strip()
-        if not line.startswith('? '):
-            return None, pos
-        rest = line[2:].strip()
-        auto = None
-        if ' auto:' in rest:
-            q, a = rest.split(' auto:', 1)
-            auto = a.strip()
-            rest = q.strip()
-        q_cmd = registry.question_command_class(rest, auto)
-        return q_cmd, pos+1
-    registry.register_parser(parse_question)
-
-    # RETURN
-    def parse_return(lines, pos, end, functions, registry):
-        line = lines[pos].strip()
-        if not line.startswith('RETURN '):
-            return None, pos
-        rest = line[7:].strip()
-        exprs = MacroParser.split_args(rest)
-        return_cmd = registry.return_command_class(exprs)
-        return return_cmd, pos+1
-    registry.register_parser(parse_return)
-
-    # IMPORT
-    def parse_import(lines, pos, end, functions, registry):
-        line = lines[pos].strip()
-        if line.startswith('IMPORT '):
-            macro_name = line[7:].strip()
-            if not macro_name:
-                print('❌ Cú pháp: IMPORT <tên_macro>')
-                return None, pos+1
-            import_cmd = registry.import_command_class(macro_name)
-            return import_cmd, pos+1
+@parser
+def parse_if(lines, pos, end, functions, registry):
+    line = lines[pos].strip()
+    if not line.startswith('IF '):
         return None, pos
-    registry.register_parser(parse_import)
+    condition = line[3:].strip()
+    j, extra = MacroParser.find_block_end(lines, pos, end, 'IF ', 'ENDIF', find_else=True, find_elif=True)
+    conditions_blocks = []
+    current_start = pos + 1
+    for typ, idx in extra:
+        if typ == 'elif':
+            elif_line = lines[idx].strip()
+            elif_cond = elif_line[5:].strip()
+            block_children, _ = MacroParser._parse_sequence(lines, current_start, idx, functions, registry)
+            conditions_blocks.append((condition, BlockCommand(block_children)))
+            condition = elif_cond
+            current_start = idx + 1
+        elif typ == 'else':
+            block_children, _ = MacroParser._parse_sequence(lines, current_start, idx, functions, registry)
+            conditions_blocks.append((condition, BlockCommand(block_children)))
+            else_children, _ = MacroParser._parse_sequence(lines, idx+1, j, functions, registry)
+            if_cmd = registry.get_command_class('if')(conditions_blocks, BlockCommand(else_children))
+            return if_cmd, j+1
+    block_children, _ = MacroParser._parse_sequence(lines, current_start, j, functions, registry)
+    conditions_blocks.append((condition, BlockCommand(block_children)))
+    if_cmd = registry.get_command_class('if')(conditions_blocks)
+    return if_cmd, j+1
 
-    # FROM IMPORT
-    def parse_from_import(lines, pos, end, functions, registry):
-        line = lines[pos].strip()
-        if not line.startswith('FROM '):
-            return None, pos
-        rest = line[5:].strip()
-        if ' IMPORT ' not in rest:
-            return None, pos
-        macro_part, funcs_part = rest.split(' IMPORT ', 1)
-        macro_name = macro_part.strip()
+@parser
+def parse_loop(lines, pos, end, functions, registry):
+    line = lines[pos].strip()
+    if not line.startswith('LOOP '):
+        return None, pos
+    count_expr = line[5:].strip()
+    j, block_cmd = MacroParser.parse_block(lines, pos, end, 'LOOP ', 'ENDLOOP', functions, registry)
+    loop_cmd = registry.get_command_class('loop')(count_expr, block_cmd)
+    return loop_cmd, j+1
+
+@parser
+def parse_foreach(lines, pos, end, functions, registry):
+    line = lines[pos].strip()
+    if not line.startswith('FOREACH '):
+        return None, pos
+    rest = line[8:].strip()
+    if ' IN ' not in rest:
+        print(f'❌ Lỗi cú pháp FOREACH: {line}')
+        return None, pos+1
+    left, right = rest.split(' IN ', 1)
+    left = left.strip()
+    vars_pattern = [token.strip() for token in left.split(',') if token.strip()]
+    list_expr = right.strip()
+    j, block_cmd = MacroParser.parse_block(lines, pos, end, 'FOREACH ', 'ENDFOREACH', functions, registry)
+    foreach_cmd = registry.get_command_class('foreach')(vars_pattern, list_expr, block_cmd)
+    return foreach_cmd, j+1
+
+@parser
+def parse_while(lines, pos, end, functions, registry):
+    line = lines[pos].strip()
+    if not line.startswith('WHILE '):
+        return None, pos
+    condition = line[6:].strip()
+    j, block_cmd = MacroParser.parse_block(lines, pos, end, 'WHILE ', 'ENDWHILE', functions, registry)
+    while_cmd = registry.get_command_class('while')(condition, block_cmd)
+    return while_cmd, j+1
+
+@parser
+def parse_call(lines, pos, end, functions, registry):
+    line = lines[pos].strip()
+    if not line.startswith('CALL '):
+        return None, pos
+    rest = line[5:].strip()
+    store_var = None
+    if ' -> ' in rest:
+        parts = rest.split(' -> ', 1)
+        call_part = parts[0].strip()
+        store_var = parts[1].strip()
+    else:
+        call_part = rest
+    import re
+    match = re.match(r'^([a-zA-Z_][a-zA-Z0-9_]*)\((.*)\)$', call_part)
+    if not match:
+        print(f'❌ Cú pháp CALL sai: {call_part}')
+        return None, pos+1
+    func_name = match.group(1)
+    args_str = match.group(2).strip()
+    args = []
+    kwargs = {}
+    tokens = MacroParser.split_args(args_str)
+    for t in tokens:
+        t = t.strip()
+        if t.startswith('**'):
+            expr = t[2:].strip()
+            args.append(('starstar', expr))
+        elif t.startswith('*'):
+            expr = t[1:].strip()
+            args.append(('star', expr))
+        elif '=' in t:
+            k, v = t.split('=', 1)
+            kwargs[k.strip()] = v.strip()
+        else:
+            args.append(('pos', t))
+    call_cmd = registry.get_command_class('call')(func_name, args, kwargs, store_var)
+    return call_cmd, pos+1
+
+@parser
+def parse_set(lines, pos, end, functions, registry):
+    line = lines[pos].strip()
+    if not line.startswith('SET '):
+        return None, pos
+    rest = line[4:].strip()
+    if '=' not in rest:
+        return None, pos+1
+    left, right = rest.split('=', 1)
+    left = left.strip()
+    targets = [token.strip() for token in left.split(',') if token.strip()]
+    value_expr = right.strip()
+    set_cmd = registry.get_command_class('set')(targets, value_expr)
+    return set_cmd, pos+1
+
+@parser
+def parse_input(lines, pos, end, functions, registry):
+    line = lines[pos].strip()
+    if not line.startswith('INPUT '):
+        return None, pos
+    input_cmd = registry.get_command_class('input')(line[6:].strip())
+    return input_cmd, pos+1
+
+@parser
+def parse_print(lines, pos, end, functions, registry):
+    line = lines[pos].strip()
+    if not line.startswith('PRINT '):
+        return None, pos
+    print_cmd = registry.get_command_class('print')(line[6:].strip())
+    return print_cmd, pos+1
+
+@parser
+def parse_question(lines, pos, end, functions, registry):
+    line = lines[pos].strip()
+    if not line.startswith('? '):
+        return None, pos
+    rest = line[2:].strip()
+    
+    # Xử lý -> trước
+    store_var = None
+    if ' -> ' in rest:
+        q, var = rest.split(' -> ', 1)
+        rest = q.strip()
+        store_var = var.strip()
+    
+    # Xử lý auto:
+    auto = None
+    if ' auto:' in rest:
+        q, a = rest.split(' auto:', 1)
+        auto = a.strip()
+        rest = q.strip()
+    
+    q_cmd = registry.get_command_class('question')(rest, auto, store_var)
+    return q_cmd, pos+1
+@parser
+def parse_return(lines, pos, end, functions, registry):
+    line = lines[pos].strip()
+    if not line.startswith('RETURN '):
+        return None, pos
+    rest = line[7:].strip()
+    exprs = MacroParser.split_args(rest)
+    return_cmd = registry.get_command_class('return')(exprs)
+    return return_cmd, pos+1
+
+@parser
+def parse_import(lines, pos, end, functions, registry):
+    line = lines[pos].strip()
+    if line.startswith('IMPORT '):
+        macro_name = line[7:].strip()
         if not macro_name:
-            print('❌ Cú pháp: FROM <macro> IMPORT <func1, func2>')
+            print('❌ Cú pháp: IMPORT <tên_macro>')
             return None, pos+1
-        func_names = [f.strip() for f in funcs_part.split(',') if f.strip()]
-        if not func_names:
-            print('❌ FROM IMPORT: danh sách hàm rỗng')
-            return None, pos+1
-        import_cmd = registry.import_command_class(macro_name, functions_only=func_names)
+        import_cmd = registry.get_command_class('import')(macro_name)
         return import_cmd, pos+1
-    registry.register_parser(parse_from_import)
+    return None, pos
 
-    # PYTHON
-    def parse_python(lines, pos, end, functions, registry):
-        line = lines[pos].strip()
-        if not line.startswith('PYTHON '):
-            return None, pos
-        rest = line[7:].strip()
-        quiet = False
-        if rest.startswith('QUIET '):
-            quiet = True
-            rest = rest[6:].strip()
-        store_var = None
-        if ' -> ' in rest:
-            expr, var = rest.split(' -> ', 1)
-            store_var = var.strip()
-            rest = expr.strip()
-        py_cmd = registry.python_command_class(rest, store_var, quiet)
-        return py_cmd, pos+1
-    registry.register_parser(parse_python)
+@parser
+def parse_from_import(lines, pos, end, functions, registry):
+    line = lines[pos].strip()
+    if not line.startswith('FROM '):
+        return None, pos
+    rest = line[5:].strip()
+    if ' IMPORT ' not in rest:
+        return None, pos
+    macro_part, funcs_part = rest.split(' IMPORT ', 1)
+    macro_name = macro_part.strip()
+    if not macro_name:
+        print('❌ Cú pháp: FROM <macro> IMPORT <func1, func2>')
+        return None, pos+1
+    func_names = [f.strip() for f in funcs_part.split(',') if f.strip()]
+    if not func_names:
+        print('❌ FROM IMPORT: danh sách hàm rỗng')
+        return None, pos+1
+    import_cmd = registry.get_command_class('import')(macro_name, functions_only=func_names)
+    return import_cmd, pos+1
 
-    # PYBLOCK
-    def parse_pyblock(lines, pos, end, functions, registry):
-        line = lines[pos].strip()
-        if not line.startswith('PYBLOCK '):
-            return None, pos
-        rest = line[8:].strip()
-        store_var = None
-        if '->' in rest:
-            parts = rest.split('->', 1)
-            store_var = parts[1].strip()
-        nested = 1
-        j = pos + 1
-        while j < end:
-            curr = lines[j].strip()
-            if curr.startswith('PYBLOCK '):
-                nested += 1
-            elif curr == 'ENDPYBLOCK':
-                nested -= 1
-                if nested == 0:
+@parser
+def parse_python(lines, pos, end, functions, registry):
+    line = lines[pos].strip()
+    if not line.startswith('PYTHON '):
+        return None, pos
+    rest = line[7:].strip()
+    quiet = False
+    if rest.startswith('QUIET '):
+        quiet = True
+        rest = rest[6:].strip()
+    store_var = None
+    if ' -> ' in rest:
+        expr, var = rest.split(' -> ', 1)
+        store_var = var.strip()
+        rest = expr.strip()
+    py_cmd = registry.get_command_class('python')(rest, store_var, quiet)
+    return py_cmd, pos+1
+
+@parser
+def parse_pyblock(lines, pos, end, functions, registry):
+    line = lines[pos].strip()
+    if not line.startswith('PYBLOCK '):
+        return None, pos
+    rest = line[8:].strip()
+    store_var = None
+    if '->' in rest:
+        parts = rest.split('->', 1)
+        store_var = parts[1].strip()
+    nested = 1
+    j = pos + 1
+    while j < end:
+        curr = lines[j].strip()
+        if curr.startswith('PYBLOCK '):
+            nested += 1
+        elif curr == 'ENDPYBLOCK':
+            nested -= 1
+            if nested == 0:
+                break
+        j += 1
+    else:
+        print("❌ Thiếu ENDPYBLOCK")
+        return None, pos+1
+    code_lines = []
+    for k in range(pos+1, j):
+        code_lines.append(lines[k].rstrip('\n'))
+    raw_code = '\n'.join(code_lines)
+    code = textwrap.dedent(raw_code)
+    pyblock_cmd = registry.get_command_class('python_block')(code, store_var)
+    return pyblock_cmd, j+1
+
+@parser
+def parse_break(lines, pos, end, functions, registry):
+    line = lines[pos].strip()
+    if line == 'BREAK':
+        return registry.get_command_class('break')(), pos+1
+    return None, pos
+
+@parser
+def parse_continue(lines, pos, end, functions, registry):
+    line = lines[pos].strip()
+    if line == 'CONTINUE':
+        return registry.get_command_class('continue')(), pos+1
+    return None, pos
+
+@parser
+def parse_try(lines, pos, end, functions, registry):
+    line = lines[pos].strip()
+    if line != 'TRY':
+        return None, pos
+    j, extra = MacroParser.find_block_end(lines, pos, end, 'TRY', 'ENDTRY', find_finally=True)
+    catches = []
+    finally_block = None
+    blocks_info = []
+    i = pos + 1
+    while i < j:
+        curr = lines[i].strip()
+        if curr.startswith('EXCEPT'):
+            end_block = i+1
+            while end_block < j:
+                nxt = lines[end_block].strip()
+                if nxt.startswith('EXCEPT') or nxt == 'FINALLY' or nxt == 'ENDTRY':
                     break
-            j += 1
+                end_block += 1
+            blocks_info.append(('except', i, end_block))
+            i = end_block
+        elif curr == 'FINALLY':
+            end_block = i+1
+            while end_block < j and lines[end_block].strip() != 'ENDTRY':
+                end_block += 1
+            blocks_info.append(('finally', i, end_block))
+            i = end_block
         else:
-            print("❌ Thiếu ENDPYBLOCK")
-            return None, pos+1
-        code_lines = []
-        for k in range(pos+1, j):
-            code_lines.append(lines[k].rstrip('\n'))
-        raw_code = '\n'.join(code_lines)
-        code = textwrap.dedent(raw_code)
-        pyblock_cmd = registry.python_block_command_class(code, store_var)
-        return pyblock_cmd, j+1
-    registry.register_parser(parse_pyblock)
+            i += 1
+    try_end = pos + 1
+    except_starts = [idx for typ, idx, _ in blocks_info if typ == 'except']
+    if except_starts:
+        try_end = except_starts[0]
+    elif any(typ == 'finally' for typ, _, _ in blocks_info):
+        finally_start = next(idx for typ, idx, _ in blocks_info if typ == 'finally')
+        try_end = finally_start
+    else:
+        try_end = j
+    try_children, _ = MacroParser._parse_sequence(lines, pos+1, try_end, functions, registry)
+    try_block = BlockCommand(try_children)
+    for typ, start, end_block in blocks_info:
+        if typ == 'except':
+            exc_line = lines[start].strip()
+            parts = exc_line.split()
+            exc_type = None
+            var_name = None
+            if len(parts) >= 2:
+                if parts[1].lower() == 'as':
+                    if len(parts) >= 3:
+                        var_name = parts[2]
+                else:
+                    exc_type = parts[1]
+                    if len(parts) >= 3 and parts[2].lower() == 'as':
+                        if len(parts) >= 4:
+                            var_name = parts[3]
+            body_children, _ = MacroParser._parse_sequence(lines, start+1, end_block, functions, registry)
+            catches.append((exc_type, var_name, BlockCommand(body_children)))
+        elif typ == 'finally':
+            body_children, _ = MacroParser._parse_sequence(lines, start+1, end_block, functions, registry)
+            finally_block = BlockCommand(body_children)
+    try_cmd = registry.get_command_class('try')(try_block, catches, finally_block)
+    return try_cmd, j+1
 
-    # BREAK
-    def parse_break(lines, pos, end, functions, registry):
-        line = lines[pos].strip()
-        if line == 'BREAK':
-            return registry.break_command_class(), pos+1
+@parser
+def parse_match(lines, pos, end, functions, registry):
+    line = lines[pos].strip()
+    if not line.startswith('MATCH '):
         return None, pos
-    registry.register_parser(parse_break)
-
-    # CONTINUE
-    def parse_continue(lines, pos, end, functions, registry):
-        line = lines[pos].strip()
-        if line == 'CONTINUE':
-            return registry.continue_command_class(), pos+1
-        return None, pos
-    registry.register_parser(parse_continue)
-
-    # TRY
-    def parse_try(lines, pos, end, functions, registry):
-        line = lines[pos].strip()
-        if line != 'TRY':
-            return None, pos
-        j, extra = MacroParser.find_block_end(lines, pos, end, 'TRY', 'ENDTRY', find_finally=True)
-        catches = []
-        finally_block = None
-        blocks_info = []
-        i = pos + 1
-        while i < j:
-            curr = lines[i].strip()
-            if curr.startswith('EXCEPT'):
-                end_block = i+1
-                while end_block < j:
-                    nxt = lines[end_block].strip()
-                    if nxt.startswith('EXCEPT') or nxt == 'FINALLY' or nxt == 'ENDTRY':
-                        break
-                    end_block += 1
-                blocks_info.append(('except', i, end_block))
-                i = end_block
-            elif curr == 'FINALLY':
-                end_block = i+1
-                while end_block < j and lines[end_block].strip() != 'ENDTRY':
-                    end_block += 1
-                blocks_info.append(('finally', i, end_block))
-                i = end_block
-            else:
-                i += 1
-        try_end = pos + 1
-        except_starts = [idx for typ, idx, _ in blocks_info if typ == 'except']
-        if except_starts:
-            try_end = except_starts[0]
-        elif any(typ == 'finally' for typ, _, _ in blocks_info):
-            finally_start = next(idx for typ, idx, _ in blocks_info if typ == 'finally')
-            try_end = finally_start
+    value_expr = line[6:].strip()
+    j, _ = MacroParser.find_block_end(lines, pos, end, 'MATCH ', 'ENDMATCH')
+    cases = []
+    default_block = None
+    current = pos + 1
+    while current < j:
+        curr_line = lines[current].strip()
+        if curr_line.startswith('CASE '):
+            pattern = curr_line[5:].strip()
+            next_case = current + 1
+            while next_case < j:
+                nxt = lines[next_case].strip()
+                if nxt.startswith('CASE ') or nxt.startswith('DEFAULT') or nxt == 'ENDMATCH':
+                    break
+                next_case += 1
+            body_children, _ = MacroParser._parse_sequence(lines, current+1, next_case, functions, registry)
+            cases.append((pattern, BlockCommand(body_children)))
+            current = next_case
+        elif curr_line.startswith('DEFAULT'):
+            next_default = current + 1
+            while next_default < j:
+                if lines[next_default].strip().startswith('CASE ') or lines[next_default].strip() == 'ENDMATCH':
+                    break
+                next_default += 1
+            body_children, _ = MacroParser._parse_sequence(lines, current+1, next_default, functions, registry)
+            default_block = BlockCommand(body_children)
+            current = next_default
         else:
-            try_end = j
-        try_children, _ = MacroParser._parse_sequence(lines, pos+1, try_end, functions, registry)
-        try_block = BlockCommand(try_children)
-        for typ, start, end_block in blocks_info:
-            if typ == 'except':
-                exc_line = lines[start].strip()
-                parts = exc_line.split()
-                exc_type = None
-                var_name = None
-                if len(parts) >= 2:
-                    if parts[1].lower() == 'as':
-                        if len(parts) >= 3:
-                            var_name = parts[2]
-                    else:
-                        exc_type = parts[1]
-                        if len(parts) >= 3 and parts[2].lower() == 'as':
-                            if len(parts) >= 4:
-                                var_name = parts[3]
-                body_children, _ = MacroParser._parse_sequence(lines, start+1, end_block, functions, registry)
-                catches.append((exc_type, var_name, BlockCommand(body_children)))
-            elif typ == 'finally':
-                body_children, _ = MacroParser._parse_sequence(lines, start+1, end_block, functions, registry)
-                finally_block = BlockCommand(body_children)
-        try_cmd = registry.try_command_class(try_block, catches, finally_block)
-        return try_cmd, j+1
-    registry.register_parser(parse_try)
+            current += 1
+    match_cmd = registry.get_command_class('match')(value_expr, cases, default_block)
+    return match_cmd, j+1
 
-    # MATCH
-    def parse_match(lines, pos, end, functions, registry):
-        line = lines[pos].strip()
-        if not line.startswith('MATCH '):
-            return None, pos
-        value_expr = line[6:].strip()
-        j, _ = MacroParser.find_block_end(lines, pos, end, 'MATCH ', 'ENDMATCH')
-        cases = []
-        default_block = None
-        current = pos + 1
-        while current < j:
-            curr_line = lines[current].strip()
-            if curr_line.startswith('CASE '):
-                pattern = curr_line[5:].strip()
-                next_case = current + 1
-                while next_case < j:
-                    nxt = lines[next_case].strip()
-                    if nxt.startswith('CASE ') or nxt.startswith('DEFAULT') or nxt == 'ENDMATCH':
-                        break
-                    next_case += 1
-                body_children, _ = MacroParser._parse_sequence(lines, current+1, next_case, functions, registry)
-                cases.append((pattern, BlockCommand(body_children)))
-                current = next_case
-            elif curr_line.startswith('DEFAULT'):
-                next_default = current + 1
-                while next_default < j:
-                    if lines[next_default].strip().startswith('CASE ') or lines[next_default].strip() == 'ENDMATCH':
-                        break
-                    next_default += 1
-                body_children, _ = MacroParser._parse_sequence(lines, current+1, next_default, functions, registry)
-                default_block = BlockCommand(body_children)
-                current = next_default
-            else:
-                current += 1
-        match_cmd = registry.match_command_class(value_expr, cases, default_block)
-        return match_cmd, j+1
-    registry.register_parser(parse_match)
-
-    # WITH
-    def parse_with(lines, pos, end, functions, registry):
-        line = lines[pos].strip()
-        if not line.startswith('WITH '):
-            return None, pos
-        rest = line[5:].strip()
+@parser
+def parse_with(lines, pos, end, functions, registry):
+    line = lines[pos].strip()
+    if not line.startswith('WITH '):
+        return None, pos
+    rest = line[5:].strip()
+    as_var = None
+    if ' AS ' in rest:
+        context_part, var_part = rest.split(' AS ', 1)
+        context_expr = context_part.strip()
+        as_var = var_part.strip()
+    else:
+        context_expr = rest
         as_var = None
-        if ' AS ' in rest:
-            context_part, var_part = rest.split(' AS ', 1)
-            context_expr = context_part.strip()
-            as_var = var_part.strip()
-        else:
-            context_expr = rest
-            as_var = None
-        j, _ = MacroParser.find_block_end(lines, pos, end, 'WITH ', 'ENDWITH')
-        body_children, _ = MacroParser._parse_sequence(lines, pos+1, j, functions, registry)
-        with_cmd = registry.with_command_class(context_expr, as_var, BlockCommand(body_children))
-        return with_cmd, j+1
-    registry.register_parser(parse_with)
+    j, block_cmd = MacroParser.parse_block(lines, pos, end, 'WITH ', 'ENDWITH', functions, registry)
+    with_cmd = registry.get_command_class('with')(context_expr, as_var, block_cmd)
+    return with_cmd, j+1
 
-    # RAISE
-    def parse_raise(lines, pos, end, functions, registry):
-        line = lines[pos].strip()
-        if not line.startswith('RAISE '):
-            return None, pos
-        expr = line[6:].strip()
-        if not expr:
-            print('❌ Cú pháp: RAISE <exception_expression>')
-            return None, pos+1
-        raise_cmd = registry.raise_command_class(expr)
-        return raise_cmd, pos+1
-    registry.register_parser(parse_raise)
-
-    # ASSERT
-    def parse_assert(lines, pos, end, functions, registry):
-        line = lines[pos].strip()
-        if not line.startswith('ASSERT '):
-            return None, pos
-        rest = line[7:].strip()
-        message = None
-        if ',' in rest:
-            cond_part, msg_part = rest.split(',', 1)
-            condition = cond_part.strip()
-            message = msg_part.strip()
-        else:
-            condition = rest
-        assert_cmd = registry.assert_command_class(condition, message)
-        return assert_cmd, pos+1
-    registry.register_parser(parse_assert)
-
-    # DEL
-    def parse_del(lines, pos, end, functions, registry):
-        line = lines[pos].strip()
-        if not line.startswith('DEL '):
-            return None, pos
-        var_name = line[4:].strip()
-        if not var_name:
-            print('❌ Cú pháp: DEL <tên_biến>')
-            return None, pos+1
-        del_cmd = registry.del_command_class(var_name)
-        return del_cmd, pos+1
-    registry.register_parser(parse_del)
-
-    # PASS
-    def parse_pass(lines, pos, end, functions, registry):
-        line = lines[pos].strip()
-        if line == 'PASS':
-            return registry.pass_command_class(), pos+1
+@parser
+def parse_raise(lines, pos, end, functions, registry):
+    line = lines[pos].strip()
+    if not line.startswith('RAISE '):
         return None, pos
-    registry.register_parser(parse_pass)
+    expr = line[6:].strip()
+    if not expr:
+        print('❌ Cú pháp: RAISE <exception_expression>')
+        return None, pos+1
+    raise_cmd = registry.get_command_class('raise')(expr)
+    return raise_cmd, pos+1
 
-    # QUIET
-    def parse_quiet(lines, pos, end, functions, registry):
-        line = lines[pos].strip()
-        if line == 'QUIET ON':
-            return registry.quiet_command_class(True), pos+1
-        if line == 'QUIET OFF':
-            return registry.quiet_command_class(False), pos+1
+@parser
+def parse_assert(lines, pos, end, functions, registry):
+    line = lines[pos].strip()
+    if not line.startswith('ASSERT '):
         return None, pos
-    registry.register_parser(parse_quiet)
+    rest = line[7:].strip()
+    message = None
+    if ',' in rest:
+        cond_part, msg_part = rest.split(',', 1)
+        condition = cond_part.strip()
+        message = msg_part.strip()
+    else:
+        condition = rest
+    assert_cmd = registry.get_command_class('assert')(condition, message)
+    return assert_cmd, pos+1
 
-    # SILENT (regular command with silent flag)
-    def parse_silent(lines, pos, end, functions, registry):
-        line = lines[pos].strip()
-        if not line.startswith('SILENT '):
-            return None, pos
-        inner_line = line[7:].strip()
-        if ' -> ' in inner_line:
-            cmd, var = inner_line.split(' -> ', 1)
-            return registry.regular_command_class(cmd.strip(), var.strip(), silent=True), pos+1
-        return registry.regular_command_class(inner_line, silent=True), pos+1
-    registry.register_parser(parse_silent)
-
-    # ======================= MỚI: BACKGROUND / WAIT =======================
-    def parse_background(lines, pos, end, functions, registry):
-        line = lines[pos].strip()
-        if line == 'BACKGROUND':
-            j, _ = MacroParser.find_block_end(lines, pos, end, 'BACKGROUND', 'ENDBACKGROUND')
-            body_children, _ = MacroParser._parse_sequence(lines, pos+1, j, functions, registry)
-            bg_cmd = registry.background_command_class(BlockCommand(body_children))
-            return bg_cmd, j+1
-        if line.startswith('BACKGROUND '):
-            rest = line[11:].strip()
-            pseudo_lines = [rest]
-            cmd, _ = MacroParser._parse_command(pseudo_lines, 0, 1, functions, registry)
-            if cmd:
-                bg_line_cmd = registry.background_line_command_class(cmd)
-                return bg_line_cmd, pos+1
+@parser
+def parse_del(lines, pos, end, functions, registry):
+    line = lines[pos].strip()
+    if not line.startswith('DEL '):
         return None, pos
-    registry.register_parser(parse_background)
+    var_name = line[4:].strip()
+    if not var_name:
+        print('❌ Cú pháp: DEL <tên_biến>')
+        return None, pos+1
+    del_cmd = registry.get_command_class('del')(var_name)
+    return del_cmd, pos+1
 
-    def parse_wait(lines, pos, end, functions, registry):
-        line = lines[pos].strip()
-        if line == 'WAIT':
-            return registry.wait_command_class(), pos+1
+@parser
+def parse_pass(lines, pos, end, functions, registry):
+    line = lines[pos].strip()
+    if line == 'PASS':
+        return registry.get_command_class('pass')(), pos+1
+    return None, pos
+
+@parser
+def parse_quiet(lines, pos, end, functions, registry):
+    line = lines[pos].strip()
+    if line == 'QUIET ON':
+        return registry.get_command_class('quiet')(True), pos+1
+    if line == 'QUIET OFF':
+        return registry.get_command_class('quiet')(False), pos+1
+    return None, pos
+
+@parser
+def parse_silent(lines, pos, end, functions, registry):
+    line = lines[pos].strip()
+    if not line.startswith('SILENT '):
         return None, pos
-    registry.register_parser(parse_wait)
+    inner_line = line[7:].strip()
+    if ' -> ' in inner_line:
+        cmd, var = inner_line.split(' -> ', 1)
+        return registry.get_command_class('regular')(cmd.strip(), var.strip(), silent=True), pos+1
+    return registry.get_command_class('regular')(inner_line, silent=True), pos+1
 
-    # REGULAR (fallback) - phải ở cuối cùng
-    def parse_regular(lines, pos, end, functions, registry):
-        line = lines[pos].strip()
-        if line.startswith(('FUNCTION ', 'IF ', 'LOOP ', 'FOREACH ', 'WHILE ', 'CALL ', 'SET ', 'INPUT ', 'PRINT ', '? ', 'RETURN ', 'IMPORT ', 'FROM ', 'PYTHON ', 'PYBLOCK ', 'BREAK', 'CONTINUE', 'TRY', 'MATCH ', 'WITH ', 'RAISE ', 'ASSERT ', 'DEL ', 'PASS', 'QUIET ', 'SILENT ', 'BACKGROUND', 'WAIT')):
-            return None, pos
-        if ' -> ' in line:
-            cmd, var = line.split(' -> ', 1)
-            return registry.regular_command_class(cmd.strip(), var.strip()), pos+1
-        return registry.regular_command_class(line), pos+1
-    registry.register_parser(parse_regular)
+@parser
+def parse_background(lines, pos, end, functions, registry):
+    line = lines[pos].strip()
+    if line == 'BACKGROUND':
+        j, block_cmd = MacroParser.parse_block(lines, pos, end, 'BACKGROUND', 'ENDBACKGROUND', functions, registry)
+        bg_cmd = registry.get_command_class('background')(block_cmd)
+        return bg_cmd, j+1
+    if line.startswith('BACKGROUND '):
+        rest = line[11:].strip()
+        pseudo_lines = [rest]
+        cmd, _ = MacroParser._parse_command(pseudo_lines, 0, 1, functions, registry)
+        if cmd:
+            bg_line_cmd = registry.get_command_class('background_line')(cmd)
+            return bg_line_cmd, pos+1
+    return None, pos
+
+@parser
+def parse_wait(lines, pos, end, functions, registry):
+    line = lines[pos].strip()
+    if line == 'WAIT':
+        return registry.get_command_class('wait')(), pos+1
+    return None, pos
+
+@parser
+def parse_regular(lines, pos, end, functions, registry):
+    line = lines[pos].strip()
+    # Bỏ qua các dòng đã được parser chuyên biệt bắt (danh sách keyword)
+    if line.startswith(('FUNCTION ', 'IF ', 'LOOP ', 'FOREACH ', 'WHILE ', 'CALL ', 'SET ', 'INPUT ', 'PRINT ', '? ', 'RETURN ', 'IMPORT ', 'FROM ', 'PYTHON ', 'PYBLOCK ', 'BREAK', 'CONTINUE', 'TRY', 'MATCH ', 'WITH ', 'RAISE ', 'ASSERT ', 'DEL ', 'PASS', 'QUIET ', 'SILENT ', 'BACKGROUND', 'WAIT')):
+        return None, pos
+    if ' -> ' in line:
+        cmd, var = line.split(' -> ', 1)
+        return registry.get_command_class('regular')(cmd.strip(), var.strip()), pos+1
+    return registry.get_command_class('regular')(line), pos+1
 
 # ==============================
 # 7. Gán class mặc định vào registry (sau khi tất cả class đã được định nghĩa)
 # ==============================
 def setup_default_registry(registry: MacroRegistry):
-    registry.set_command_class = SetCommand
-    registry.input_command_class = InputCommand
-    registry.print_command_class = PrintCommand
-    registry.question_command_class = QuestionCommand
-    registry.return_command_class = ReturnCommand
-    registry.import_command_class = ImportCommand
-    registry.regular_command_class = RegularCommand
-    registry.python_command_class = PythonCommand
-    registry.python_block_command_class = PythonBlockCommand
-    registry.if_command_class = IfCommand
-    registry.loop_command_class = LoopCommand
-    registry.foreach_command_class = ForeachCommand
-    registry.while_command_class = WhileCommand
-    registry.call_command_class = CallCommand
-    registry.break_command_class = BreakCommand
-    registry.continue_command_class = ContinueCommand
-    registry.raise_command_class = RaiseCommand
-    registry.assert_command_class = AssertCommand
-    registry.del_command_class = DelCommand
-    registry.pass_command_class = PassCommand
-    registry.quiet_command_class = QuietCommand
-    registry.try_command_class = TryCommand
-    registry.match_command_class = MatchCommand
-    registry.with_command_class = WithCommand
-    # Mới
-    registry.background_command_class = BackgroundCommand
-    registry.background_line_command_class = BackgroundLineCommand
-    registry.wait_command_class = WaitCommand
+    # Đăng ký command classes
+    registry.register_command('set', SetCommand)
+    registry.register_command('input', InputCommand)
+    registry.register_command('print', PrintCommand)
+    registry.register_command('question', QuestionCommand)
+    registry.register_command('return', ReturnCommand)
+    registry.register_command('import', ImportCommand)
+    registry.register_command('regular', RegularCommand)
+    registry.register_command('python', PythonCommand)
+    registry.register_command('python_block', PythonBlockCommand)
+    registry.register_command('if', IfCommand)
+    registry.register_command('loop', LoopCommand)
+    registry.register_command('foreach', ForeachCommand)
+    registry.register_command('while', WhileCommand)
+    registry.register_command('call', CallCommand)
+    registry.register_command('break', BreakCommand)
+    registry.register_command('continue', ContinueCommand)
+    registry.register_command('raise', RaiseCommand)
+    registry.register_command('assert', AssertCommand)
+    registry.register_command('del', DelCommand)
+    registry.register_command('pass', PassCommand)
+    registry.register_command('quiet', QuietCommand)
+    registry.register_command('try', TryCommand)
+    registry.register_command('match', MatchCommand)
+    registry.register_command('with', WithCommand)
+    registry.register_command('background', BackgroundCommand)
+    registry.register_command('background_line', BackgroundLineCommand)
+    registry.register_command('wait', WaitCommand)
 
+    # Helper classes
     registry.string_utils_class = StringUtils
     registry.variable_resolver_class = VariableResolver
     registry.condition_evaluator_class = ConditionEvaluator
@@ -1796,7 +1770,7 @@ class MacroCommandHandler:
             if not rest:
                 print('❌ Thiếu tên macro.')
                 return True
-            delay = 0.0
+            delay = 0.1
             macro_name = rest
             if ' ' in rest:
                 parts = rest.split()
@@ -1828,22 +1802,25 @@ class MacroCommandHandler:
 # 10. Khởi tạo registry mặc định (sau khi tất cả class đã có)
 # ==============================
 setup_default_registry(_global_registry)
-# Đăng ký tất cả parser (cần registry đã có các class)
-register_all_parsers(_global_registry)
-# Cuối macro.py, trước plugin_info
+
+# Đăng ký tất cả parser từ danh sách PARSERS
+for parser_func in PARSERS:
+    _global_registry.register_parser(parser_func)
+
+# Ghi đè PrintCommand với icon (nếu muốn)
 class MyPrintCommand(PrintCommand):
     def execute(self, ctx):
         #print("🔊", end=" ")
         return super().execute(ctx)
 
-_global_registry.print_command_class = MyPrintCommand
+_global_registry.register_command('print', MyPrintCommand)
+
 # ==============================
 # 11. Plugin info
 # ==============================
 plugin_info = {
     'enabled': True,
     'register': lambda assistant: assistant.handlers.append(MacroCommandHandler(assistant)),
-    'methods': [],
-    'classes': [MacroRecorder, MacroCommandHandler],
-    'description': 'Ghi và chạy macro với IF/ELIF/ELSE, LOOP, FOREACH (hỗ trợ unpack), WHILE, FUNCTION/CALL (hỗ trợ *args, **kwargs và tham số mặc định), INPUT, SET (hỗ trợ unpack gán), ?, PRINT, IMPORT, FROM IMPORT, PYTHON, BREAK, CONTINUE, TRY/FINALLY/EXCEPT, MATCH/CASE, WITH, ASSERT, DEL, PASS, RAISE, RETURN nhiều giá trị, QUIET ON/OFF (im lặng toàn cục) - **THÊM BACKGROUND/WAIT để chạy tác vụ nặng song song** - CÚ PHÁP BIẾN $ (ví dụ $ten, ${biểu thức}) thay vì {} - **OCP Complete: mọi thành phần đều có thể ghi đè qua MacroRegistry**'
+    'command_handle': ['macro'],
+    
 }
