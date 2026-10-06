@@ -1,4 +1,4 @@
-# thêm chức năng import lẫn nhau giữa các plugin 
+# DI process_command, loader 
 import os
 import sys
 import importlib.util
@@ -8,7 +8,7 @@ class PluginInfo(TypedDict, total=False):
     enabled: bool
     register: Callable[[Any], None]
     command_handle: Optional[List[str]]
-
+    
 class PluginLoader:
     def __init__(self, plugins_folder: str = "plugins"):
         self.plugins_folder = plugins_folder
@@ -17,7 +17,7 @@ class PluginLoader:
         if not os.path.exists(init_file):
             with open(init_file, "w", encoding="utf-8"):
                 pass
-
+                
     def load_plugins(self, assistant: Any) -> None:
         """Tải tất cả plugin từ thư mục plugins"""
         for filename in os.listdir(self.plugins_folder):
@@ -29,10 +29,7 @@ class PluginLoader:
                 continue
             plugin_path = os.path.join(self.plugins_folder, filename)
             try:
-                spec = importlib.util.spec_from_file_location(
-                    f"plugins.{filename[:-3]}",
-                    plugin_path
-                )
+                spec = importlib.util.spec_from_file_location(f"plugins.{filename[:-3]}", plugin_path)
                 module = importlib.util.module_from_spec(spec)
                 sys.modules[spec.name] = module
                 spec.loader.exec_module(module)
@@ -43,14 +40,17 @@ class PluginLoader:
                     plugin_info['register'](assistant)
             except Exception as e:
                 print(f"⚠️ Lỗi khi tải plugin {filename}: {e}")
-
+                
 class VirtualAssistant:
-    def __init__(self):
+    def __init__(self, loader=None, process_command=None):
         self.handlers: List[Any] = []
-        self.loader = PluginLoader()
+        self.loader = loader or PluginLoader()
         self.context: Dict[str, Any] = {}
-
+        self._process_command = process_command
+        
     def process_command(self, command: str):
+        if self._process_command:
+            return self._process_command(command)
         command = command.strip()
         if command in ['exit', 'quit', 'thoát']:
             print("👋 Tạm biệt!")
@@ -64,7 +64,7 @@ class VirtualAssistant:
                     return result
         print("🤷 Tôi không hiểu lệnh đó")
         return True
-
+        
     def run(self) -> None:
         """Vòng lặp chính"""
         print("🤖 Xin chào, tôi là trợ lý ảo (Asi-86)")
@@ -79,11 +79,15 @@ class VirtualAssistant:
                 break
             except Exception as e:
                 print(f"⚠️ Lỗi: {e}")
-
+                
 def start():
     """Tạo và khởi động trợ lý ảo"""
     assistant = VirtualAssistant()
-    assistant.loader.load_plugins(assistant)
+    old_loader = assistant.loader
+    old_loader.load_plugins(assistant)
+    if assistant.loader is not old_loader:
+        #print("🔄 Phát hiện loader mới, tải lại plugin...")
+        assistant.loader.load_plugins(assistant)
     assistant.run()
 
 if __name__ == "__main__":
